@@ -1,18 +1,42 @@
+import os
 import requests
+from pyrogram import Client, filters
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
-import os
+
+# Get configuration from environment variables
+TMDB_API_KEY = os.getenv('TMDB_API_KEY')
+BLOG_ID = os.getenv('BLOG_ID')
+TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
+CLIENT_ID = os.getenv('CLIENT_ID')
+CLIENT_SECRET = os.getenv('CLIENT_SECRET')
+REDIRECT_URI = os.getenv('REDIRECT_URI', 'http://localhost:8080/oauth2callback')
 
 # TMDb API Configuration
-TMDB_API_KEY = os.getenv('TMDB_API_KEY')
 TMDB_BASE_URL = 'https://api.themoviedb.org/3/search/movie'
 
-# Blogger API Configuration
-SCOPES = ['https://www.googleapis.com/auth/blogger']
-BLOG_ID = os.getenv('BLOG_ID')  # Retrieve the Blog ID from environment variables
+# Google OAuth: authenticate and post to Blogger
+def authenticate_blogger():
+    # Use the client_id and client_secret from environment variables
+    client_secrets = {
+        "installed": {
+            "client_id": CLIENT_ID,
+            "client_secret": CLIENT_SECRET,
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+            "redirect_uris": [REDIRECT_URI]
+        }
+    }
+    
+    # Set up OAuth flow
+    flow = InstalledAppFlow.from_client_config(client_secrets, scopes=['https://www.googleapis.com/auth/blogger'])
+    credentials = flow.run_local_server(port=8080, redirect_uri=REDIRECT_URI)
+    blogger_service = build('blogger', 'v3', credentials=credentials)
+    return blogger_service
 
-# Step 1: Fetch movie details using TMDb API
+# Fetch movie details using TMDb API
 def get_movie_details(movie_name):
     url = f'{TMDB_BASE_URL}?api_key={TMDB_API_KEY}&query={movie_name}'
     response = requests.get(url)
@@ -22,15 +46,7 @@ def get_movie_details(movie_name):
         return data['results']  # Return the list of search results
     return []
 
-# Step 2: Authenticate with Google OAuth
-def authenticate_blogger():
-    flow = InstalledAppFlow.from_client_secrets_file(
-        'your_client_secrets.json', SCOPES)
-    credentials = flow.run_local_server(port=8080)
-    blogger_service = build('blogger', 'v3', credentials=credentials)
-    return blogger_service
-
-# Step 3: Create a blog post on Blogger
+# Create a blog post on Blogger
 def post_to_blogger(blogger_service, title, description, download_link):
     try:
         post_data = {
@@ -42,49 +58,53 @@ def post_to_blogger(blogger_service, title, description, download_link):
     except HttpError as err:
         print(f"An error occurred: {err}")
 
-# Step 4: Display multiple movie options and allow selection
-def select_movie(movies):
-    print("Multiple movies found with the same title. Please choose the correct one:")
-    for index, movie in enumerate(movies):
-        print(f"{index + 1}. {movie['title']} ({movie.get('release_date', 'Unknown')})")
-    
-    # Get user input for movie selection
-    try:
-        choice = int(input("Enter the number of the movie to select: ")) - 1
-        if 0 <= choice < len(movies):
-            return movies[choice]
-        else:
-            print("Invalid choice. Exiting.")
-            return None
-    except ValueError:
-        print("Invalid input. Exiting.")
-        return None
+# Pyrogram client to handle incoming messages and commands
+app = Client("movie_bot", bot_token=TELEGRAM_BOT_TOKEN)
 
-# Main Execution
-def main():
-    movie_name = input("Enter the movie name: ")  # Input movie name
-    download_link = input("Enter the download link: ")  # Input download link
-    
-    # Step 1: Fetch movie details
+# Start command to welcome the user
+@app.on_message(filters.command("start"))
+def start(update, context):
+    update.reply_text("Welcome! Send me the movie name to start.")
+
+# Movie search handler
+@app.on_message(filters.text & ~filters.command)
+def search_movie(update, context):
+    movie_name = update.text
     movies = get_movie_details(movie_name)
     
     if movies:
-        # Step 4: Display multiple movie options and allow selection
-        selected_movie = select_movie(movies)
+        update.reply_text(f"Found {len(movies)} movies. Choose the correct one:")
         
-        if selected_movie:
+        # Display movie options
+        for i, movie in enumerate(movies):
+            update.reply_text(f"{i+1}. {movie['title']} ({movie.get('release_date', 'Unknown')})")
+        
+        update.reply_text("Please select the movie number.")
+        context.user_data['movies'] = movies  # Store the list of movies for future use
+    else:
+        update.reply_text(f"No movies found with the title '{movie_name}'.")
+
+# Handle user input (movie selection)
+@app.on_message(filters.text & ~filters.command)
+def select_movie(update, context):
+    try:
+        selected_movie_index = int(update.text) - 1
+        movies = context.user_data.get('movies', [])
+        
+        if selected_movie_index >= 0 and selected_movie_index < len(movies):
+            selected_movie = movies[selected_movie_index]
             title = selected_movie['title']
             description = selected_movie['overview']
-            
-            # Step 2: Authenticate with Blogger API
-            blogger_service = authenticate_blogger()
-            
-            # Step 3: Post movie details to Blogger
-            post_to_blogger(blogger_service, title, description, download_link)
-        else:
-            print("No movie selected. Exiting.")
-    else:
-        print(f"No movies found with the title '{movie_name}'.")
+            download_link = "http://example.com/download_link"  # Replace with actual download link
 
-if __name__ == '__main__':
-    main()
+            # Authenticate with Blogger and post the movie details
+            blogger_service = authenticate_blogger()
+            post_to_blogger(blogger_service, title, description, download_link)
+            update.reply_text(f"Movie '{title}' has been posted to the blog!")
+        else:
+            update.reply_text("Invalid selection. Try again.")
+    except ValueError:
+        update.reply_text("Please enter a valid number.")
+
+# Run the bot
+app.run()
