@@ -73,15 +73,15 @@ def start(update, context):
 
 # Retry logic to handle time synchronization error
 def start_bot_with_retry():
-    retry_count = 3
+    retry_count = 5  # Increase the retry count to 5
     for attempt in range(retry_count):
         try:
             print(f"Attempt {attempt + 1} to start the bot...")
             app.run()
             break  # Break if the bot starts successfully
         except BadMsgNotification as e:
-            print(f"Error: {e}. Retrying in 5 seconds...")
-            time.sleep(5)
+            print(f"Error: {e}. Retrying in 10 seconds...")
+            time.sleep(10)  # Increase delay to 10 seconds between retries
         except Exception as e:
             print(f"An unexpected error occurred: {e}")
             break
