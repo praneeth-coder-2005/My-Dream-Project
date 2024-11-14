@@ -5,10 +5,14 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
+# Fetch API credentials from environment variables
+api_id = os.getenv('API_ID')  # The API ID you got from Telegram
+api_hash = os.getenv('API_HASH')  # The API Hash you got from Telegram
+bot_token = os.getenv('TELEGRAM_BOT_TOKEN')  # Your Bot Token from BotFather
+
 # Get configuration from environment variables
 TMDB_API_KEY = os.getenv('TMDB_API_KEY')
 BLOG_ID = os.getenv('BLOG_ID')
-TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 CLIENT_ID = os.getenv('CLIENT_ID')
 CLIENT_SECRET = os.getenv('CLIENT_SECRET')
 REDIRECT_URI = os.getenv('REDIRECT_URI', 'http://localhost:8080/oauth2callback')
@@ -57,7 +61,7 @@ def post_to_blogger(blogger_service, title, description, download_link):
         print(f"An error occurred: {err}")
 
 # Pyrogram client to handle incoming messages and commands
-app = Client("movie_bot", bot_token=TELEGRAM_BOT_TOKEN)
+app = Client("movie_bot", bot_token=bot_token, api_id=api_id, api_hash=api_hash)
 
 # Start command to welcome the user
 @app.on_message(filters.command("start"))
