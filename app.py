@@ -1,6 +1,6 @@
-from pyrogram import Client, filters
 import os
 import requests
+from pyrogram import Client, filters
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
@@ -18,6 +18,7 @@ TMDB_BASE_URL = 'https://api.themoviedb.org/3/search/movie'
 
 # Google OAuth: authenticate and post to Blogger
 def authenticate_blogger():
+    # Use the client_id and client_secret from environment variables
     client_secrets = {
         "installed": {
             "client_id": CLIENT_ID,
@@ -28,7 +29,8 @@ def authenticate_blogger():
             "redirect_uris": [REDIRECT_URI]
         }
     }
-    
+
+    # Set up OAuth flow
     flow = InstalledAppFlow.from_client_config(client_secrets, scopes=['https://www.googleapis.com/auth/blogger'])
     credentials = flow.run_local_server(port=8080, redirect_uri=REDIRECT_URI)
     blogger_service = build('blogger', 'v3', credentials=credentials)
@@ -39,7 +41,7 @@ def get_movie_details(movie_name):
     url = f'{TMDB_BASE_URL}?api_key={TMDB_API_KEY}&query={movie_name}'
     response = requests.get(url)
     data = response.json()
-    
+
     if data['results']:
         return data['results']  # Return the list of search results
     return []
@@ -64,31 +66,31 @@ app = Client("movie_bot", bot_token=TELEGRAM_BOT_TOKEN)
 def start(update, context):
     update.reply_text("Welcome! Send me the movie name to start.")
 
-# Movie search handler
-@app.on_message(filters.text & ~filters.command())  # Corrected filter syntax
+# Movie search handler (for non-command text messages)
+@app.on_message(filters.text & ~filters.command())  # Exclude command messages
 def search_movie(update, context):
     movie_name = update.text
     movies = get_movie_details(movie_name)
-    
+
     if movies:
         update.reply_text(f"Found {len(movies)} movies. Choose the correct one:")
-        
+
         # Display movie options
         for i, movie in enumerate(movies):
             update.reply_text(f"{i+1}. {movie['title']} ({movie.get('release_date', 'Unknown')})")
-        
+
         update.reply_text("Please select the movie number.")
         context.user_data['movies'] = movies  # Store the list of movies for future use
     else:
         update.reply_text(f"No movies found with the title '{movie_name}'.")
 
 # Handle user input (movie selection)
-@app.on_message(filters.text & ~filters.command())  # Corrected filter syntax
+@app.on_message(filters.text & ~filters.command())  # Exclude command messages
 def select_movie(update, context):
     try:
         selected_movie_index = int(update.text) - 1
         movies = context.user_data.get('movies', [])
-        
+
         if selected_movie_index >= 0 and selected_movie_index < len(movies):
             selected_movie = movies[selected_movie_index]
             title = selected_movie['title']
