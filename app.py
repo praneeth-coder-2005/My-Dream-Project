@@ -1,5 +1,6 @@
 import os
 import requests
+import time  # Import time module for delay
 from pyrogram import Client, filters
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
@@ -120,6 +121,9 @@ def select_movie(update, context):
             update.reply_text("Invalid selection. Try again.")
     except ValueError:
         update.reply_text("Please enter a valid number.")
+
+# Ensure the time is synchronized before starting the bot
+time.sleep(5)  # Adding a small delay to allow the system time to sync
 
 # Run the bot
 app.run()
