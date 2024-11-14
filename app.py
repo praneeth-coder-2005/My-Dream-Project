@@ -18,7 +18,6 @@ TMDB_BASE_URL = 'https://api.themoviedb.org/3/search/movie'
 
 # Google OAuth: authenticate and post to Blogger
 def authenticate_blogger():
-    # Use the client_id and client_secret from environment variables
     client_secrets = {
         "installed": {
             "client_id": CLIENT_ID,
@@ -30,7 +29,6 @@ def authenticate_blogger():
         }
     }
 
-    # Set up OAuth flow
     flow = InstalledAppFlow.from_client_config(client_secrets, scopes=['https://www.googleapis.com/auth/blogger'])
     credentials = flow.run_local_server(port=8080, redirect_uri=REDIRECT_URI)
     blogger_service = build('blogger', 'v3', credentials=credentials)
@@ -43,7 +41,7 @@ def get_movie_details(movie_name):
     data = response.json()
 
     if data['results']:
-        return data['results']  # Return the list of search results
+        return data['results']
     return []
 
 # Create a blog post on Blogger
@@ -67,7 +65,7 @@ def start(update, context):
     update.reply_text("Welcome! Send me the movie name to start.")
 
 # Movie search handler (for non-command text messages)
-@app.on_message(filters.text & ~filters.command())  # Corrected filter syntax to exclude command messages
+@app.on_message(filters.text & ~filters.command())  # Correct filter syntax to exclude command messages
 def search_movie(update, context):
     movie_name = update.text
     movies = get_movie_details(movie_name)
@@ -85,7 +83,7 @@ def search_movie(update, context):
         update.reply_text(f"No movies found with the title '{movie_name}'.")
 
 # Handle user input (movie selection)
-@app.on_message(filters.text & ~filters.command())  # Corrected filter syntax to exclude command messages
+@app.on_message(filters.text & ~filters.command())  # Correct filter syntax to exclude command messages
 def select_movie(update, context):
     try:
         selected_movie_index = int(update.text) - 1
