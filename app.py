@@ -123,7 +123,7 @@ def select_movie(update, context):
         update.reply_text("Please enter a valid number.")
 
 # Ensure the time is synchronized before starting the bot
-time.sleep(5)  # Adding a small delay to allow the system time to sync
+time.sleep(10)  # Adding a longer delay to ensure the system time syncs
 
 # Run the bot
 app.run()
