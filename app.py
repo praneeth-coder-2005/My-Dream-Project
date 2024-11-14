@@ -7,7 +7,6 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from pyrogram.errors import BadMsgNotification
 
-
 # Fetch API credentials from environment variables
 api_id = os.getenv('API_ID')  # The API ID you got from Telegram
 api_hash = os.getenv('API_HASH')  # The API Hash you got from Telegram
@@ -71,21 +70,6 @@ app = Client("movie_bot", bot_token=bot_token, api_id=api_id, api_hash=api_hash)
 def start(update, context):
     update.reply_text("Welcome! Send me the movie name to start.")
 
-# Retry logic to handle time synchronization error
-def start_bot_with_retry():
-    retry_count = 5  # Increase the retry count to 5
-    for attempt in range(retry_count):
-        try:
-            print(f"Attempt {attempt + 1} to start the bot...")
-            app.run()
-            break  # Break if the bot starts successfully
-        except BadMsgNotification as e:
-            print(f"Error: {e}. Retrying in 10 seconds...")
-            time.sleep(10)  # Increase delay to 10 seconds between retries
-        except Exception as e:
-            print(f"An unexpected error occurred: {e}")
-            break
-
 # Movie search handler (for non-command text messages)
 @app.on_message(filters.text)
 def handle_movie_search(update, context):
@@ -139,8 +123,20 @@ def select_movie(update, context):
     except ValueError:
         update.reply_text("Please enter a valid number.")
 
-# Ensure the time is synchronized before starting the bot
-time.sleep(10)  # Adding a longer delay to ensure the system time syncs
+# Function to synchronize time and handle retries
+def retry_start_bot():
+    retry_count = 5
+    for attempt in range(retry_count):
+        try:
+            print(f"Attempt {attempt + 1} to start the bot...")
+            app.start()  # Start the bot session
+            break  # Successfully started the bot, break the loop
+        except BadMsgNotification as e:
+            print(f"Error: {e}. Retrying in 10 seconds...")
+            time.sleep(10)  # Retry delay
+        except Exception as e:
+            print(f"Unexpected error: {e}. Giving up.")
+            break
 
 # Run the bot with retry logic
-start_bot_with_retry()
+retry_start_bot()
