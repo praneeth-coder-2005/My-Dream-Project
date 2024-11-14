@@ -65,7 +65,7 @@ def start(update, context):
     update.reply_text("Welcome! Send me the movie name to start.")
 
 # Movie search handler (for non-command text messages)
-@app.on_message(filters.text & ~filters.command())  # Exclude all command messages
+@app.on_message(filters.text & ~filters.command())  # Correct filter syntax to exclude command messages
 def search_movie(update, context):
     movie_name = update.text
     movies = get_movie_details(movie_name)
@@ -83,7 +83,7 @@ def search_movie(update, context):
         update.reply_text(f"No movies found with the title '{movie_name}'.")
 
 # Handle user input (movie selection)
-@app.on_message(filters.text & ~filters.command())  # Exclude all command messages
+@app.on_message(filters.text & ~filters.command())  # Correct filter syntax to exclude command messages
 def select_movie(update, context):
     try:
         selected_movie_index = int(update.text) - 1
