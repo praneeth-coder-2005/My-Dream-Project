@@ -2,14 +2,15 @@ import requests
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
+import os
 
 # TMDb API Configuration
-TMDB_API_KEY = 'your_tmdb_api_key'
+TMDB_API_KEY = os.getenv('TMDB_API_KEY')
 TMDB_BASE_URL = 'https://api.themoviedb.org/3/search/movie'
 
 # Blogger API Configuration
 SCOPES = ['https://www.googleapis.com/auth/blogger']
-BLOG_ID = 'your_blog_id'  # Your Blog ID from Blogger
+BLOG_ID = os.getenv('BLOG_ID')  # Retrieve the Blog ID from environment variables
 
 # Step 1: Fetch movie details using TMDb API
 def get_movie_details(movie_name):
