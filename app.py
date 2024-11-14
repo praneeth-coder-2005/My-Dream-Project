@@ -6,6 +6,7 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from pyrogram.errors import BadMsgNotification
+import socket
 
 # Fetch API credentials from environment variables
 api_id = os.getenv('API_ID')  # The API ID you got from Telegram
@@ -123,12 +124,19 @@ def select_movie(update, context):
     except ValueError:
         update.reply_text("Please enter a valid number.")
 
+# Function to bind to $PORT for Heroku
+def bind_to_port():
+    port = os.getenv("PORT", 5000)
+    host = "0.0.0.0"  # Bind to all IPs
+    socket.getaddrinfo(host, port)
+
 # Function to synchronize time and handle retries
 def retry_start_bot():
     retry_count = 5
     for attempt in range(retry_count):
         try:
             print(f"Attempt {attempt + 1} to start the bot...")
+            bind_to_port()  # Ensure we bind to the correct port for Heroku
             app.start()  # Start the bot session
             break  # Successfully started the bot, break the loop
         except BadMsgNotification as e:
