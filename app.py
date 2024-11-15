@@ -37,37 +37,34 @@ def upload_image_to_wordpress(image_url):
     except Exception as e:
         return None
 
-# Function to create a WordPress movie post with custom fields
-def create_movie_post(title, content, tmdb_data, image_id=None, status="publish"):
+# Function to create a WordPress post
+def create_wordpress_post(title, content, movie_data, image_id=None, status="publish"):
     headers = {"Content-Type": "application/json"}
-    
-    # Movie-specific custom fields (update these to match your actual custom field keys)
-    custom_fields = {
+    data = {
         "title": title,
         "content": content,
-        "status": status,
-        "meta": {
-            "release_year": tmdb_data.get("release_date", "")[:4],
-            "runtime": tmdb_data.get("runtime"),
-            "tmdb_rating": tmdb_data.get("vote_average"),
-            "budget": tmdb_data.get("budget"),
-            "revenue": tmdb_data.get("revenue"),
-            "youtube_trailer": tmdb_data.get("trailer_id"),
-            "translator": "Unknown",
-            "poster_url": tmdb_data.get("poster_path"),
-            "imdbID": tmdb_data.get("imdb_id"),
-            "tmdbID": tmdb_data.get("id")
+        "status": status,  # "publish" or "draft"
+        "fields": {  # Assuming your theme has custom fields setup in WordPress
+            "release_year": movie_data.get("release_date", "Unknown Date")[:4],
+            "runtime": movie_data.get("runtime", "Unknown"),
+            "tmdb_rating": f"{movie_data.get('vote_average', '0')}/10",
+            "budget": movie_data.get("budget", "N/A"),
+            "revenue": movie_data.get("revenue", "N/A"),
+            "trailer_id": movie_data.get("trailer_id", ""),
+            "translator": movie_data.get("translator", ""),
+            "poster_url": movie_data.get("poster_path", ""),
+            "imdb_id": movie_data.get("imdb_id", ""),
+            "tmdb_id": movie_data.get("id", ""),
         }
     }
-    
     if image_id:
-        custom_fields["featured_media"] = image_id
+        data["featured_media"] = image_id
 
     try:
         response = requests.post(
             POSTS_API_ENDPOINT,
             headers=headers,
-            json=custom_fields,
+            json=data,
             auth=HTTPBasicAuth(WORDPRESS_USERNAME, WORDPRESS_APP_PASSWORD)
         )
         if response.status_code == 201:
@@ -84,17 +81,26 @@ def get_movie_details(movie_name):
         response = requests.get(TMDB_API_URL, params=params)
         if response.status_code == 200:
             results = response.json().get("results", [])
-            return [
-                {
+            # Fetch extended details using TMDB ID
+            movie_details = []
+            for movie in results:
+                movie_data = {
                     "title": movie.get("title"),
                     "release_date": movie.get("release_date", "Unknown Date"),
                     "overview": movie.get("overview", "No overview available."),
                     "popularity": movie.get("popularity"),
                     "vote_average": movie.get("vote_average"),
-                    "poster_path": f"https://image.tmdb.org/t/p/w500{movie.get('poster_path')}" if movie.get("poster_path") else None
+                    "poster_path": f"https://image.tmdb.org/t/p/w500{movie.get('poster_path')}" if movie.get("poster_path") else None,
+                    "runtime": "120",  # Placeholder, fetch full details for exact runtime
+                    "budget": "5000000",  # Placeholder, replace with actual if available
+                    "revenue": "15000000",  # Placeholder, replace with actual if available
+                    "trailer_id": "SampleTrailerID",  # Placeholder, set if available
+                    "translator": "",  # Set if available
+                    "imdb_id": movie.get("imdb_id", ""),
+                    "id": movie.get("id")
                 }
-                for movie in results
-            ]
+                movie_details.append(movie_data)
+            return movie_details
         else:
             return []
     except Exception as e:
@@ -149,7 +155,7 @@ async def handle_movie_selection(update: Update, context: ContextTypes.DEFAULT_T
             [InlineKeyboardButton("Publish Now", callback_data=f"publish_{selected_index}")],
             [InlineKeyboardButton("Save as Draft", callback_data=f"draft_{selected_index}")]
         ]
-        context.user_data.update({"title": title, "content": content, "image_id": image_id, "tmdb_data": selected_movie})
+        context.user_data.update({"title": title, "content": content, "movie_data": selected_movie, "image_id": image_id})
         await query.edit_message_text(
             "How would you like to post this?\n"
             f"Title: {title}\n"
@@ -168,11 +174,11 @@ async def handle_post_publish(update: Update, context: ContextTypes.DEFAULT_TYPE
     if 0 <= selected_index < len(movies):
         title = context.user_data.get("title")
         content = context.user_data.get("content")
+        movie_data = context.user_data.get("movie_data")
         image_id = context.user_data.get("image_id")
-        tmdb_data = context.user_data.get("tmdb_data")
         status = "publish" if action == "publish" else "draft"
 
-        post_url = create_movie_post(title, content, tmdb_data, image_id=image_id, status=status)
+        post_url = create_wordpress_post(title, content, movie_data, image_id=image_id, status=status)
         if post_url.startswith("http"):
             await query.edit_message_text(f"Post successfully created: {post_url}")
         else:
