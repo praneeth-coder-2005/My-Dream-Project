@@ -186,7 +186,7 @@ def main():
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_movie_search))
-    application.add_handler(CallbackQueryHandler(handle_movie_selection, pattern="^[0-9]+$))
+    application.add_handler(CallbackQueryHandler(handle_movie_selection, pattern="^[0-9]+$"))
     application.add_handler(CallbackQueryHandler(handle_post_publish, pattern="^(publish|draft)_\d+$"))
 
     application.run_polling()
