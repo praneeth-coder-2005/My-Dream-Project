@@ -1,117 +1,94 @@
 import os
 import requests
-from requests.auth import HTTPBasicAuth
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
+from telegram import Update
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
 
-# Environment Variables
-WORDPRESS_USERNAME = os.getenv('WORDPRESS_USERNAME')
-WORDPRESS_PASSWORD = os.getenv('WORDPRESS_PASSWORD')
-WORDPRESS_SITE_URL = os.getenv('WORDPRESS_SITE_URL')
-TMDB_API_KEY = os.getenv('TMDB_API_KEY')
+# WordPress credentials
+WORDPRESS_SITE_URL = "https://clawfilezz.in"
+WORDPRESS_USERNAME = os.getenv("WORDPRESS_USERNAME")  # Replace with your username if not using env
+WORDPRESS_APP_PASSWORD = os.getenv("WORDPRESS_APP_PASSWORD")  # Replace with your application password if not using env
 
-# State storage for user sessions
-user_sessions = {}
+# WordPress REST API endpoint for creating posts
+API_ENDPOINT = f"{WORDPRESS_SITE_URL}/wp-json/wp/v2/posts"
 
-# Function to fetch movie details from TMDB API
-def get_movie_details(query):
-    url = f"https://api.themoviedb.org/3/search/movie?api_key={TMDB_API_KEY}&query={query}"
-    response = requests.get(url)
+# Function to create a WordPress post
+def create_wordpress_post(title, content, status="publish"):
+    """
+    Creates a post on WordPress using the REST API.
+    """
+    auth = (WORDPRESS_USERNAME, WORDPRESS_APP_PASSWORD)
+    headers = {"Content-Type": "application/json"}
+    data = {"title": title, "content": content, "status": status}
+
+    try:
+        response = requests.post(API_ENDPOINT, headers=headers, json=data, auth=auth)
+        if response.status_code == 201:
+            return response.json().get("link")
+        else:
+            return f"Error: {response.status_code}, {response.json().get('message')}"
+    except requests.exceptions.RequestException as e:
+        return f"Request error: {str(e)}"
+
+# TMDB API Integration
+TMDB_API_KEY = os.getenv("TMDB_API_KEY")
+TMDB_API_URL = "https://api.themoviedb.org/3/search/movie"
+
+def get_movie_details(movie_name):
+    params = {"api_key": TMDB_API_KEY, "query": movie_name}
+    response = requests.get(TMDB_API_URL, params=params)
     if response.status_code == 200:
-        data = response.json()
+        results = response.json().get("results", [])
         return [
-            {"title": movie["title"], "release_date": movie.get("release_date", "Unknown Date"), "overview": movie.get("overview", "No description available.")}
-            for movie in data.get("results", [])
+            {"title": movie.get("title"), "release_date": movie.get("release_date", "Unknown Date")}
+            for movie in results
         ]
     else:
         return []
 
-# Function to post content to WordPress
-def post_to_wordpress(title, content):
-    url = f"{WORDPRESS_SITE_URL}/wp-json/wp/v2/posts"
-    response = requests.post(
-        url,
-        auth=HTTPBasicAuth(WORDPRESS_USERNAME, WORDPRESS_PASSWORD),
-        json={"title": title, "content": content, "status": "publish"},
-    )
-    if response.status_code == 201:
-        return "Post published successfully!"
-    else:
-        return f"Error posting to WordPress: {response.json()}"
-
-# Command handler for /start
+# Telegram Bot Handlers
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.message.chat_id
-    user_sessions[chat_id] = {"state": "idle"}
-    await update.message.reply_text("Welcome! Send me a movie name to search for.")
+    await update.message.reply_text("Welcome! Send a movie name to search.")
 
-# Message handler for searching movies
-async def search_movies(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.message.chat_id
-    query = update.message.text.strip()
+async def handle_movie_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    movie_name = update.message.text
+    movies = get_movie_details(movie_name)
+    if movies:
+        buttons = [
+            f"{i + 1}. {movie['title']} ({movie['release_date']})"
+            for i, movie in enumerate(movies[:10])
+        ]
+        context.user_data["movies"] = movies
+        await update.message.reply_text(
+            f"Found movies for '{movie_name}':\n" + "\n".join(buttons) + "\nPlease reply with the movie number."
+        )
+    else:
+        await update.message.reply_text("No movies found.")
 
-    if not query:
-        await update.message.reply_text("Please enter a valid movie name.")
-        return
-
-    # Fetch movies from TMDB
-    movies = get_movie_details(query)
-    if not movies:
-        await update.message.reply_text("No movies found. Try a different name.")
-        return
-
-    # Save movies to session state
-    user_sessions[chat_id] = {"state": "awaiting_selection", "movies": movies}
-    keyboard = [
-        [InlineKeyboardButton(f"{movie['title']} ({movie['release_date']})", callback_data=str(i))]
-        for i, movie in enumerate(movies)
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text("Select a movie to post to WordPress:", reply_markup=reply_markup)
-
-# Callback handler for selecting a movie
-async def select_movie(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    chat_id = query.message.chat_id
-
-    # Check session state
-    session = user_sessions.get(chat_id, {})
-    if session.get("state") != "awaiting_selection":
-        await query.edit_message_text("No movie search is active. Please search for a movie first.")
-        return
-
-    # Validate movie selection
+async def handle_movie_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
-        movie_index = int(query.data)
-        movies = session.get("movies", [])
-        selected_movie = movies[movie_index]
-    except (ValueError, IndexError):
-        await query.edit_message_text("Invalid selection. Please start a new search.")
-        return
+        selected_index = int(update.message.text) - 1
+        movies = context.user_data.get("movies", [])
+        if 0 <= selected_index < len(movies):
+            selected_movie = movies[selected_index]
+            title = selected_movie["title"]
+            content = f"<h2>{title}</h2><p>Release Date: {selected_movie['release_date']}</p>"
+            post_url = create_wordpress_post(title, content)
+            if "http" in post_url:
+                await update.message.reply_text(f"Post successfully created: {post_url}")
+            else:
+                await update.message.reply_text(f"Error posting to WordPress: {post_url}")
+        else:
+            await update.message.reply_text("Please enter a valid movie number.")
+    except ValueError:
+        await update.message.reply_text("Please enter a number.")
 
-    # Get selected movie details
-    title = selected_movie["title"]
-    content = f"**Release Date:** {selected_movie['release_date']}\n\n**Overview:**\n{selected_movie['overview']}"
-
-    # Post to WordPress
-    result = post_to_wordpress(title, content)
-    await query.edit_message_text(result)
-
-    # Reset user session
-    user_sessions[chat_id] = {"state": "idle"}
-
-# Main function to start the bot
+# Main Function
 def main():
-    TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-    application = Application.builder().token(TOKEN).build()
-
-    # Handlers
+    application = ApplicationBuilder().token(os.getenv("TELEGRAM_BOT_TOKEN")).build()
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, search_movies))
-    application.add_handler(CallbackQueryHandler(select_movie))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_movie_search))
+    application.add_handler(MessageHandler(filters.Regex(r"^\d+$"), handle_movie_selection))
 
-    # Run the bot
     application.run_polling()
 
 if __name__ == "__main__":
