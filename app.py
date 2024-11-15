@@ -1,15 +1,15 @@
 import os
 import time
 from pyrogram import Client
-from pyrogram.errors import BadMsgNotification, FloodWait  # Corrected import here
+from pyrogram.errors import BadMsgNotification, FloodWait  # Correct import
 
 # Fetch API credentials from environment variables
 api_id = os.getenv('API_ID')  # The API ID you got from Telegram
 api_hash = os.getenv('API_HASH')  # The API Hash you got from Telegram
 bot_token = os.getenv('TELEGRAM_BOT_TOKEN')  # Your Bot Token from BotFather
 
-# Create the Pyrogram client with session persistence
-app = Client("movie_bot", bot_token=bot_token, api_id=api_id, api_hash=api_hash, session_name="my_session")
+# Create the Pyrogram client (without session_name)
+app = Client("movie_bot", bot_token=bot_token, api_id=api_id, api_hash=api_hash)
 
 # Start the bot with retry logic for time sync and flood wait errors
 def start_bot_with_retries():
