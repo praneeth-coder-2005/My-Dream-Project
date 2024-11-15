@@ -1,4 +1,5 @@
 import os
+import requests
 import json
 import logging
 from telegram import Update
