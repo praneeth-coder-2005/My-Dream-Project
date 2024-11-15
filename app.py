@@ -1,122 +1,113 @@
 import os
+import json
+import logging
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
-import google.auth
-from google.auth.transport.requests import Request
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
+import requests
 
-# Initialize global variables
-search_results = []
-last_query = ""
+# Enable logging
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO
+)
+logger = logging.getLogger(__name__)
 
 # Blogger API Setup
 SCOPES = ['https://www.googleapis.com/auth/blogger']
-SERVICE_ACCOUNT_FILE = 'path/to/client_secrets.json'  # Update with the path to your service account JSON
+BLOG_ID = '2426657398890190336'  # Replace with your Blogger blog ID
 
-# Authenticate using the service account JSON file
+# Authenticate with Blogger using JSON data from environment variables
 def authenticate_blogger():
-    credentials = service_account.Credentials.from_service_account_file(
-        SERVICE_ACCOUNT_FILE, scopes=SCOPES)
+    credentials_info = json.loads(os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON"))
+    credentials = service_account.Credentials.from_service_account_info(
+        credentials_info, scopes=SCOPES
+    )
     service = build('blogger', 'v3', credentials=credentials)
     return service
 
-# Function to create a post on Blogger
-def create_blogger_post(service, blog_id, title, content):
-    post_body = {
-        "kind": "blogger#post",
-        "title": title,
-        "content": content
-    }
-    post = service.posts().insert(blogId=blog_id, body=post_body).execute()
-    return post.get("url")  # Returns the URL of the created post
+# Fetch movie details from an API
+def get_movie_details(movie_name):
+    url = f'https://api.example.com/movies?query={movie_name}'  # Replace with actual API URL
+    response = requests.get(url)
+    if response.status_code == 200:
+        return response.json()['results']
+    else:
+        logger.error("Failed to fetch movie details.")
+        return []
 
-# Function to fetch movie details (Mockup example for demonstration)
-def get_movie_details(query):
-    # Mockup data; replace with API call (e.g., TMDb API)
-    return [
-        {
-            "title": "Kanguva",
-            "release_date": "2024-11-14",
-            "overview": "A story of courage and vengeance set in a mythical era.",
-            "genres": ["Action", "Adventure"],
-            "rating": "8.5",
-            "runtime": "120 minutes",
-            "poster": "https://example.com/poster.jpg"  # Mock poster URL
-        },
-        {
-            "title": "Kanguva - Part Two",
-            "release_date": "2027-01-13",
-            "overview": "The thrilling continuation of the Kanguva saga.",
-            "genres": ["Action", "Fantasy"],
-            "rating": "8.8",
-            "runtime": "130 minutes",
-            "poster": "https://example.com/poster2.jpg"  # Mock poster URL
-        }
-    ]
+# Post to Blogger
+def post_to_blogger(service, title, content, image_url):
+    body = {
+        'kind': 'blogger#post',
+        'blog': {'id': BLOG_ID},
+        'title': title,
+        'content': f"<h1>{title}</h1><img src='{image_url}' alt='{title}'><p>{content}</p>"
+    }
+    try:
+        post = service.posts().insert(blogId=BLOG_ID, body=body).execute()
+        logger.info(f"Post created: {post['url']}")
+        return post['url']
+    except Exception as e:
+        logger.error(f"An error occurred while posting to Blogger: {e}")
+        return None
+
+# Handler to search for movies
+async def handle_movie_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = ' '.join(context.args)
+    if not query:
+        await update.message.reply_text("Please provide a movie name.")
+        return
+
+    movies = get_movie_details(query)
+    if not movies:
+        await update.message.reply_text("No movies found.")
+        return
+
+    movie_list = "\n".join([f"{i + 1}. {movie['title']} ({movie['release_date']})" for i, movie in enumerate(movies[:10])])
+    context.user_data['movies'] = movies
+    await update.message.reply_text(f"Found movies:\n{movie_list}\n\nPlease reply with the movie number.")
+
+# Handler to handle movie selection and post to Blogger
+async def handle_movie_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        movie_index = int(update.message.text) - 1
+        movies = context.user_data.get('movies', [])
+
+        if 0 <= movie_index < len(movies):
+            selected_movie = movies[movie_index]
+            title = selected_movie['title']
+            overview = selected_movie.get('overview', 'No overview available.')
+            poster_path = selected_movie.get('poster_path', '')
+            image_url = f"https://image.tmdb.org/t/p/w500{poster_path}" if poster_path else ''
+
+            service = authenticate_blogger()
+            post_url = post_to_blogger(service, title, overview, image_url)
+            if post_url:
+                await update.message.reply_text(f"Movie posted to Blogger: {post_url}")
+            else:
+                await update.message.reply_text("Failed to post movie to Blogger.")
+        else:
+            await update.message.reply_text("Invalid selection.")
+    except ValueError:
+        await update.message.reply_text("Please reply with a valid movie number.")
 
 # Start command
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Welcome! Please send me a movie name to search.")
-
-# Handle movie search
-async def handle_movie_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global search_results, last_query
-
-    user_input = update.message.text.strip()
-    if user_input.isdigit() and search_results:  # User selects a movie
-        movie_index = int(user_input) - 1
-        if 0 <= movie_index < len(search_results):
-            selected_movie = search_results[movie_index]
-            response = (
-                f"**Title:** {selected_movie['title']}\n"
-                f"**Release Date:** {selected_movie['release_date']}\n"
-                f"**Overview:** {selected_movie['overview']}\n"
-                f"**Genres:** {', '.join(selected_movie['genres'])}\n"
-                f"**Rating:** {selected_movie['rating']}/10\n"
-                f"**Runtime:** {selected_movie['runtime']}"
-            )
-            await update.message.reply_text(response, parse_mode="Markdown")
-
-            # Prepare the content for the blog post
-            blog_content = (
-                f"<h2>{selected_movie['title']}</h2>"
-                f"<p><strong>Release Date:</strong> {selected_movie['release_date']}</p>"
-                f"<p><strong>Overview:</strong> {selected_movie['overview']}</p>"
-                f"<p><strong>Genres:</strong> {', '.join(selected_movie['genres'])}</p>"
-                f"<p><strong>Rating:</strong> {selected_movie['rating']}/10</p>"
-                f"<p><strong>Runtime:</strong> {selected_movie['runtime']}</p>"
-                f"<img src='{selected_movie['poster']}' alt='Movie Poster'>"
-            )
-
-            # Authenticate and post to Blogger
-            service = authenticate_blogger()
-            blog_id = '2426657398890190336'  # Replace with your Blogger blog ID
-            post_url = create_blogger_post(service, blog_id, selected_movie['title'], blog_content)
-
-            await update.message.reply_text(f"Posted to Blogger! Check it here: {post_url}")
-        else:
-            await update.message.reply_text("Invalid selection. Please try again.")
-    else:  # User inputs a new movie query
-        last_query = user_input
-        search_results = get_movie_details(user_input)
-        if search_results:
-            response = "Found movies:\n"
-            for idx, movie in enumerate(search_results, start=1):
-                response += f"{idx}. {movie['title']} ({movie['release_date']})\n"
-            response += "Please reply with the movie number."
-        else:
-            response = "No movies found. Please try a different query."
-        await update.message.reply_text(response)
+    await update.message.reply_text("Hello! Send /movie <movie name> to search for a movie.")
 
 # Main function to set up the bot
 def main():
-    application = Application.builder().token(os.getenv("BOT_TOKEN")).build()
+    token = os.getenv("BOT_TOKEN")
+    application = Application.builder().token(token).build()
 
+    # Handlers
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_movie_search))
+    application.add_handler(CommandHandler("movie", handle_movie_search))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_movie_selection))
 
+    # Run bot
     application.run_polling()
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
