@@ -1,4 +1,5 @@
 import requests
+from imdb import IMDb
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler, filters
 from requests.auth import HTTPBasicAuth
@@ -6,15 +7,18 @@ from requests.auth import HTTPBasicAuth
 # WordPress REST API configuration
 WORDPRESS_SITE_URL = "https://clawfilezz.in"
 WORDPRESS_USERNAME = "admin"
-WORDPRESS_APP_PASSWORD = "Ehvh Ryr0WXnIZ61HwdI6ilVP"
+WORDPRESS_APP_PASSWORD = "Ehvh Ryr0 WXnI Z61H wdI6 ilVP"
 
 # WordPress REST API endpoint
 POSTS_API_ENDPOINT = f"{WORDPRESS_SITE_URL}/wp-json/wp/v2/posts"
 MEDIA_API_ENDPOINT = f"{WORDPRESS_SITE_URL}/wp-json/wp/v2/media"
 
-# TMDB API configuration
+# TMDB and IMDb configuration
 TMDB_API_KEY = "bb5f40c5be4b24660cbdc20c2409835e"
 TMDB_API_URL = "https://api.themoviedb.org/3/search/movie"
+
+# Initialize IMDb instance
+ia = IMDb()
 
 # Function to upload a featured image to WordPress
 def upload_image_to_wordpress(image_url):
@@ -38,24 +42,14 @@ def upload_image_to_wordpress(image_url):
         return None
 
 # Function to create a WordPress post
-def create_wordpress_post(title, content, movie_data, image_id=None, status="publish"):
+def create_wordpress_post(title, content, categories=None, tags=None, image_id=None, status="publish"):
     headers = {"Content-Type": "application/json"}
     data = {
         "title": title,
         "content": content,
         "status": status,  # "publish" or "draft"
-        "fields": {  # Assuming your theme has custom fields setup in WordPress
-            "release_year": movie_data.get("release_date", "Unknown Date")[:4],
-            "runtime": movie_data.get("runtime", "Unknown"),
-            "tmdb_rating": f"{movie_data.get('vote_average', '0')}/10",
-            "budget": movie_data.get("budget", "N/A"),
-            "revenue": movie_data.get("revenue", "N/A"),
-            "trailer_id": movie_data.get("trailer_id", ""),
-            "translator": movie_data.get("translator", ""),
-            "poster_url": movie_data.get("poster_path", ""),
-            "imdb_id": movie_data.get("imdb_id", ""),
-            "tmdb_id": movie_data.get("id", ""),
-        }
+        "categories": categories or [],
+        "tags": tags or []
     }
     if image_id:
         data["featured_media"] = image_id
@@ -75,36 +69,42 @@ def create_wordpress_post(title, content, movie_data, image_id=None, status="pub
         return f"Error during post creation: {str(e)}"
 
 # Function to fetch movie details from TMDB
-def get_movie_details(movie_name):
+def get_movie_details_tmdb(movie_name):
     params = {"api_key": TMDB_API_KEY, "query": movie_name}
     try:
         response = requests.get(TMDB_API_URL, params=params)
         if response.status_code == 200:
             results = response.json().get("results", [])
-            # Fetch extended details using TMDB ID
-            movie_details = []
-            for movie in results:
-                movie_data = {
+            return [
+                {
                     "title": movie.get("title"),
                     "release_date": movie.get("release_date", "Unknown Date"),
                     "overview": movie.get("overview", "No overview available."),
                     "popularity": movie.get("popularity"),
                     "vote_average": movie.get("vote_average"),
-                    "poster_path": f"https://image.tmdb.org/t/p/w500{movie.get('poster_path')}" if movie.get("poster_path") else None,
-                    "runtime": "120",  # Placeholder, fetch full details for exact runtime
-                    "budget": "5000000",  # Placeholder, replace with actual if available
-                    "revenue": "15000000",  # Placeholder, replace with actual if available
-                    "trailer_id": "SampleTrailerID",  # Placeholder, set if available
-                    "translator": "",  # Set if available
-                    "imdb_id": movie.get("imdb_id", ""),
-                    "id": movie.get("id")
+                    "poster_path": f"https://image.tmdb.org/t/p/w500{movie.get('poster_path')}" if movie.get("poster_path") else None
                 }
-                movie_details.append(movie_data)
-            return movie_details
+                for movie in results
+            ]
         else:
             return []
     except Exception as e:
         return []
+
+# Function to fetch movie details from IMDb
+def get_movie_details_imdb(movie_name):
+    imdb_movies = ia.search_movie(movie_name)
+    if imdb_movies:
+        movie = ia.get_movie(imdb_movies[0].movieID)
+        return {
+            "imdb_rating": movie.get("rating"),
+            "votes": movie.get("votes"),
+            "genres": ", ".join(movie.get("genres", [])),
+            "plot": movie.get("plot outline", "No plot available."),
+            "year": movie.get("year", "Unknown Year"),
+            "runtime": movie.get("runtimes", ["Unknown Runtime"])[0]
+        }
+    return {}
 
 # Telegram Bot Handlers
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -120,7 +120,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_movie_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
     movie_name = update.message.text
-    movies = get_movie_details(movie_name)
+    movies = get_movie_details_tmdb(movie_name)
     if movies:
         keyboard = [
             [InlineKeyboardButton(f"{movie['title']} ({movie['release_date']})", callback_data=str(i))]
@@ -142,20 +142,34 @@ async def handle_movie_selection(update: Update, context: ContextTypes.DEFAULT_T
     if 0 <= selected_index < len(movies):
         selected_movie = movies[selected_index]
         title = selected_movie["title"]
-        content = (
+        tmdb_content = (
             f"<h2>{title}</h2>"
             f"<p>Release Date: {selected_movie['release_date']}</p>"
             f"<p>Overview: {selected_movie['overview']}</p>"
             f"<p>Popularity: {selected_movie['popularity']}</p>"
             f"<p>Vote Average: {selected_movie['vote_average']}</p>"
         )
+        
+        # Fetch IMDb details
+        imdb_data = get_movie_details_imdb(title)
+        imdb_content = (
+            f"<p>IMDb Rating: {imdb_data.get('imdb_rating', 'N/A')}</p>"
+            f"<p>Votes: {imdb_data.get('votes', 'N/A')}</p>"
+            f"<p>Genres: {imdb_data.get('genres', 'N/A')}</p>"
+            f"<p>Plot: {imdb_data.get('plot', 'N/A')}</p>"
+            f"<p>Year: {imdb_data.get('year', 'N/A')}</p>"
+            f"<p>Runtime: {imdb_data.get('runtime', 'N/A')} minutes</p>"
+        )
+
+        content = tmdb_content + imdb_content
         image_id = upload_image_to_wordpress(selected_movie["poster_path"]) if selected_movie["poster_path"] else None
 
+        # Allow user to choose publish status
         keyboard = [
             [InlineKeyboardButton("Publish Now", callback_data=f"publish_{selected_index}")],
             [InlineKeyboardButton("Save as Draft", callback_data=f"draft_{selected_index}")]
         ]
-        context.user_data.update({"title": title, "content": content, "movie_data": selected_movie, "image_id": image_id})
+        context.user_data.update({"title": title, "content": content, "image_id": image_id})
         await query.edit_message_text(
             "How would you like to post this?\n"
             f"Title: {title}\n"
@@ -165,35 +179,13 @@ async def handle_movie_selection(update: Update, context: ContextTypes.DEFAULT_T
     else:
         await query.edit_message_text("Invalid selection.")
 
-async def handle_post_publish(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    data = query.data.split("_")
-    action, selected_index = data[0], int(data[1])
-    movies = context.user_data.get("movies", [])
-    if 0 <= selected_index < len(movies):
-        title = context.user_data.get("title")
-        content = context.user_data.get("content")
-        movie_data = context.user_data.get("movie_data")
-        image_id = context.user_data.get("image_id")
-        status = "publish" if action == "publish" else "draft"
-
-        post_url = create_wordpress_post(title, content, movie_data, image_id=image_id, status=status)
-        if post_url.startswith("http"):
-            await query.edit_message_text(f"Post successfully created: {post_url}")
-        else:
-            await query.edit_message_text(f"Error posting to WordPress: {post_url}")
-    else:
-        await query.edit_message_text("Invalid selection.")
-
 # Main Function
 def main():
-    application = ApplicationBuilder().token("8148506170:AAHPk5Su4ADx3pg2iRlbLTVOv7PlnNIDNqo").build()
+    application = ApplicationBuilder().token("YOUR_TELEGRAM_BOT_TOKEN").build()
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_movie_search))
     application.add_handler(CallbackQueryHandler(handle_movie_selection, pattern="^[0-9]+$"))
-    application.add_handler(CallbackQueryHandler(handle_post_publish, pattern="^(publish|draft)_\d+$"))
 
     application.run_polling()
 
