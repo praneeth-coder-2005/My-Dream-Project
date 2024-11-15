@@ -8,6 +8,7 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 import requests
 from dotenv import load_dotenv
+import asyncio  # For event loop management
 
 # Load environment variables
 load_dotenv()
@@ -87,18 +88,19 @@ def post_to_blogger(blogger_service, title, description, download_link):
         print(f"An error occurred: {err}")
 
 # Setup webhook and add handlers
-async def setup_webhook():
-    application = Application.builder().token(bot_token).build()
+async def setup_webhook(application):
     application.add_handler(CommandHandler('start', start))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_movie_search))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, select_movie))
 
     await application.run_polling()
 
-# Main function to start the bot with graceful shutdown
+# Main function to start the bot
 async def main():
-    await setup_webhook()
+    application = Application.builder().token(bot_token).build()
+    await setup_webhook(application)
 
+# This is the block to prevent the event loop error on Heroku
 if __name__ == '__main__':
-    import asyncio
-    asyncio.run(main())
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(main())
