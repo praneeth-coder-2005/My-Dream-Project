@@ -1,4 +1,3 @@
-import os
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler, filters
 from wordpress_xmlrpc import Client, WordPressPost
@@ -7,11 +6,11 @@ import requests
 
 # WordPress XML-RPC configuration
 WORDPRESS_XMLRPC_URL = "https://clawfilezz.in/xmlrpc.php"
-WORDPRESS_USERNAME = os.getenv("WORDPRESS_USERNAME")  # Replace with your username if not using env
-WORDPRESS_PASSWORD = os.getenv("WORDPRESS_PASSWORD")  # Replace with your password if not using env
+WORDPRESS_USERNAME = "admin"  # Replace with your username
+WORDPRESS_PASSWORD = "pass"   # Replace with your password
 
 # TMDB API Integration
-TMDB_API_KEY = os.getenv("TMDB_API_KEY")
+TMDB_API_KEY = "bb5f40c5be4b24660cbdc20c2409835e"  # Replace with your TMDB API Key
 TMDB_API_URL = "https://api.themoviedb.org/3/search/movie"
 
 def get_movie_details(movie_name):
@@ -83,7 +82,8 @@ async def handle_movie_selection(update: Update, context: ContextTypes.DEFAULT_T
 
 # Main Function
 def main():
-    application = ApplicationBuilder().token(os.getenv("TELEGRAM_BOT_TOKEN")).build()
+    TELEGRAM_BOT_TOKEN = "your_telegram_bot_token"  # Replace with your Telegram bot token
+    application = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
     application.add_handler(CommandHandler("start", start))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_movie_search))
     application.add_handler(CallbackQueryHandler(handle_movie_selection))
