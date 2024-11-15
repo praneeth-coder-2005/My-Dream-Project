@@ -82,7 +82,7 @@ async def handle_movie_selection(update: Update, context: ContextTypes.DEFAULT_T
 
 # Main Function
 def main():
-    TELEGRAM_BOT_TOKEN = "your_telegram_bot_token"  # Replace with your Telegram bot token
+    TELEGRAM_BOT_TOKEN = "8148506170:AAHPk5Su4ADx3pg2iRlbLTVOv7PlnNIDNqo"  # Replace with your Telegram bot token
     application = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
     application.add_handler(CommandHandler("start", start))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_movie_search))
