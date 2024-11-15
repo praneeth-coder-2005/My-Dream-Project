@@ -5,9 +5,9 @@ from features.add_download import handle_add_download_link
 from features.add_video import handle_add_video_player
 from features.search_post import handle_search
 from utils.wordpress import list_posts
-import os
+from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 
-TOKEN = "8148506170:AAHPk5Su4ADx3pg2iRlbLTVOv7PlnNIDNqo"
+TOKEN = "YOUR_BOT_TOKEN"
 
 async def start(update, context):
     await update.message.reply_text(
