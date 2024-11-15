@@ -6,6 +6,7 @@ from googleapiclient.discovery import build
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
+
 # Authenticate Blogger API using Service Account
 def authenticate_blogger():
     service_account_json = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS_JSON")
@@ -18,6 +19,7 @@ def authenticate_blogger():
         scopes=["https://www.googleapis.com/auth/blogger"]
     )
     return build('blogger', 'v3', credentials=credentials)
+
 
 # Fetch movies from TMDB API
 def fetch_movies_from_tmdb(query):
@@ -33,6 +35,7 @@ def fetch_movies_from_tmdb(query):
     else:
         raise ValueError(f"Failed to fetch movies from TMDB: {response.status_code}")
 
+
 # Post to Blogger
 async def post_to_blogger(service, blog_id, title, content):
     body = {
@@ -43,13 +46,15 @@ async def post_to_blogger(service, blog_id, title, content):
     post = service.posts().insert(blogId=blog_id, body=body, isDraft=False).execute()
     return post
 
+
 # Start Command
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Send me a movie name to search and post to Blogger!")
 
+
 # Handle Search Query
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.message.text
+    query = update.message.text.strip()
     context.user_data["query"] = query
     await update.message.reply_text(f"Searching for movies related to '{query}'...")
 
@@ -68,6 +73,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"An error occurred while searching for movies: {str(e)}")
 
+
 # Handle Movie Selection
 async def handle_movie_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
     movies = context.user_data.get("movies", [])
@@ -76,7 +82,7 @@ async def handle_movie_selection(update: Update, context: ContextTypes.DEFAULT_T
         return
 
     try:
-        movie_index = int(update.message.text) - 1
+        movie_index = int(update.message.text.strip()) - 1  # Convert input to index
         if 0 <= movie_index < len(movies):
             selected_movie = movies[movie_index]
             service = authenticate_blogger()
@@ -91,15 +97,13 @@ async def handle_movie_selection(update: Update, context: ContextTypes.DEFAULT_T
             # Post to Blogger
             post = await post_to_blogger(service, blog_id, title, content)
             await update.message.reply_text(f"Posted to Blogger! View it here: {post['url']}")
-            
-            # Clear movies from context after posting
-            context.user_data["movies"] = None
         else:
             await update.message.reply_text("Invalid movie number. Please try again.")
     except ValueError:
         await update.message.reply_text("Please enter a valid movie number.")
     except Exception as e:
         await update.message.reply_text(f"An error occurred: {str(e)}")
+
 
 # Main Function
 def main():
@@ -116,6 +120,7 @@ def main():
 
     # Run the bot
     application.run_polling()
+
 
 if __name__ == "__main__":
     main()
