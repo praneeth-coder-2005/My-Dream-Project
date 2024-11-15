@@ -1,8 +1,8 @@
 import os
 import requests
 from requests.auth import HTTPBasicAuth
-from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 
 # Environment Variables
 WORDPRESS_USERNAME = os.getenv('WORDPRESS_USERNAME')
@@ -62,40 +62,41 @@ async def search_movies(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Save movies to session state
     user_sessions[chat_id] = {"state": "awaiting_selection", "movies": movies}
-    reply_text = f"Found movies for '{query}':\n"
-    for i, movie in enumerate(movies, start=1):
-        reply_text += f"{i}. {movie['title']} ({movie['release_date']})\n"
-    reply_text += "Please reply with the movie number to post to WordPress."
-    await update.message.reply_text(reply_text)
+    keyboard = [
+        [InlineKeyboardButton(f"{movie['title']} ({movie['release_date']})", callback_data=str(i))]
+        for i, movie in enumerate(movies)
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text("Select a movie to post to WordPress:", reply_markup=reply_markup)
 
-# Message handler for selecting a movie
+# Callback handler for selecting a movie
 async def select_movie(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.message.chat_id
+    query = update.callback_query
+    await query.answer()
+    chat_id = query.message.chat_id
 
     # Check session state
     session = user_sessions.get(chat_id, {})
     if session.get("state") != "awaiting_selection":
-        await update.message.reply_text("No movie search is active. Please search for a movie first.")
+        await query.edit_message_text("No movie search is active. Please search for a movie first.")
         return
 
     # Validate movie selection
     try:
-        movie_index = int(update.message.text.strip()) - 1
+        movie_index = int(query.data)
         movies = session.get("movies", [])
-        if movie_index < 0 or movie_index >= len(movies):
-            raise IndexError
+        selected_movie = movies[movie_index]
     except (ValueError, IndexError):
-        await update.message.reply_text("Please enter a valid movie number.")
+        await query.edit_message_text("Invalid selection. Please start a new search.")
         return
 
     # Get selected movie details
-    selected_movie = movies[movie_index]
     title = selected_movie["title"]
     content = f"**Release Date:** {selected_movie['release_date']}\n\n**Overview:**\n{selected_movie['overview']}"
 
     # Post to WordPress
     result = post_to_wordpress(title, content)
-    await update.message.reply_text(result)
+    await query.edit_message_text(result)
 
     # Reset user session
     user_sessions[chat_id] = {"state": "idle"}
@@ -108,7 +109,7 @@ def main():
     # Handlers
     application.add_handler(CommandHandler("start", start))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, search_movies))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, select_movie))
+    application.add_handler(CallbackQueryHandler(select_movie))
 
     # Run the bot
     application.run_polling()
