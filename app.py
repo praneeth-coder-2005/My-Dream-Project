@@ -1,8 +1,7 @@
 import os
 import logging
 from telegram import Update
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
-from telegram.ext import Dispatcher
+from telegram.ext import Updater, CommandHandler, MessageHandler, filters, CallbackContext
 from telegram.ext import Application
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
@@ -125,8 +124,8 @@ def setup_webhook():
     
     # Add handlers
     application.add_handler(CommandHandler('start', start))
-    application.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_movie_search))
-    application.add_handler(MessageHandler(Filters.text & ~Filters.command, select_movie))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_movie_search))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, select_movie))
 
     application.run_polling()
 
