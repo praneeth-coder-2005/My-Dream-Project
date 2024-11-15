@@ -1,48 +1,45 @@
 import os
-import time
-from pyrogram import Client, filters  # Import filters here
-from pyrogram.errors import BadMsgNotification, FloodWait  # Correct import
+import logging
+from telegram import Update
+from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
+from telegram.ext import Dispatcher
+from telegram.ext import Application
+from google_auth_oauthlib.flow import InstalledAppFlow
+from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
+import requests
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 # Fetch API credentials from environment variables
 api_id = os.getenv('API_ID')  # The API ID you got from Telegram
 api_hash = os.getenv('API_HASH')  # The API Hash you got from Telegram
 bot_token = os.getenv('TELEGRAM_BOT_TOKEN')  # Your Bot Token from BotFather
 
-# Create the Pyrogram client (without session_name)
-app = Client("movie_bot", bot_token=bot_token, api_id=api_id, api_hash=api_hash)
+# Google API credentials and TMDb API
+TMDB_API_KEY = os.getenv('TMDB_API_KEY')
+BLOG_ID = os.getenv('BLOG_ID')
+CLIENT_ID = os.getenv('CLIENT_ID')
+CLIENT_SECRET = os.getenv('CLIENT_SECRET')
+REDIRECT_URI = os.getenv('REDIRECT_URI', 'http://localhost:8080/oauth2callback')
 
-# Start the bot with retry logic for time sync and flood wait errors
-def start_bot_with_retries():
-    retry_count = 5  # Number of retry attempts
-    backoff_time = 10  # Initial wait time before retrying in seconds
-    
-    for attempt in range(retry_count):
-        try:
-            print(f"Attempt {attempt + 1} to start the bot...")
-            app.start()  # Start the bot session
-            break  # Successfully started the bot, break the loop
-        except BadMsgNotification as e:
-            print(f"BadMsgNotification Error: {e}. Retrying in {backoff_time} seconds...")
-            time.sleep(backoff_time)  # Wait for time to sync
-            backoff_time *= 2  # Exponential backoff: double the wait time
-        except FloodWait as e:  # Use the correct exception name here
-            print(f"FloodWaitError: Telegram says wait for {e.x} seconds. Retrying in {e.x} seconds...")
-            time.sleep(e.x)  # Wait for the required amount of time specified by Telegram
-        except Exception as e:
-            print(f"Unexpected error: {e}. Giving up.")
-            break
+TMDB_BASE_URL = 'https://api.themoviedb.org/3/search/movie'
 
-# Define command handlers
-@app.on_message(filters.command("start"))  # Use filters for command
-def start(update, context):
+# Set up logging to track errors
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Define a command handler for the /start command
+def start(update: Update, context: CallbackContext):
     update.message.reply_text("Welcome! Send me the movie name to start.")
 
-# Movie search handler (for non-command text messages)
-@app.on_message(filters.text)  # Use filters for text messages
-def handle_movie_search(update, context):
+# Handle incoming movie search requests
+def handle_movie_search(update: Update, context: CallbackContext):
     movie_name = update.message.text.strip()
 
-    # Fetch movie details from TMDb API or database
+    # Fetch movie details
     movies = get_movie_details(movie_name)
 
     if movies:
@@ -57,9 +54,8 @@ def handle_movie_search(update, context):
     else:
         update.message.reply_text(f"No movies found with the title '{movie_name}'.")
 
-# Handle user input (movie selection)
-@app.on_message(filters.text)  # Use filters for text messages
-def select_movie(update, context):
+# Handle user selection of a movie
+def select_movie(update: Update, context: CallbackContext):
     try:
         selected_movie_index = int(update.message.text) - 1
         movies = context.user_data.get('movies', [])
@@ -119,5 +115,20 @@ def post_to_blogger(blogger_service, title, description, download_link):
     except HttpError as err:
         print(f"An error occurred: {err}")
 
-# Run the bot with retry logic
-start_bot_with_retries()
+# Set up webhook for receiving messages
+def setup_webhook():
+    application = Application.builder().token(bot_token).build()
+    
+    # Set up the webhook (replace with your actual URL)
+    webhook_url = 'https://your-app.herokuapp.com/webhook'  # Set your webhook URL here
+    application.bot.set_webhook(url=webhook_url)
+    
+    # Add handlers
+    application.add_handler(CommandHandler('start', start))
+    application.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_movie_search))
+    application.add_handler(MessageHandler(Filters.text & ~Filters.command, select_movie))
+
+    application.run_polling()
+
+if __name__ == '__main__':
+    setup_webhook()
