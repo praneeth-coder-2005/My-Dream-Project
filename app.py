@@ -1,117 +1,100 @@
 import os
-import requests
+import json
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
+from telegram import Update
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
-# Blogger API authentication
+# Function to authenticate with Blogger API
 def authenticate_blogger():
-    credentials = service_account.Credentials.from_service_account_file(
-        'path/to/client_secrets.json',
+    # Get the service account JSON from Heroku's environment variable
+    service_account_json = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS_JSON")
+    if not service_account_json:
+        raise ValueError("Environment variable GOOGLE_APPLICATION_CREDENTIALS_JSON not found.")
+    
+    # Parse the JSON from the environment variable
+    credentials_info = json.loads(service_account_json)
+    
+    # Authenticate using service account credentials
+    credentials = service_account.Credentials.from_service_account_info(
+        credentials_info,
         scopes=["https://www.googleapis.com/auth/blogger"]
     )
-    service = build("blogger", "v3", credentials=credentials)
+    
+    # Build the Blogger service
+    service = build('blogger', 'v3', credentials=credentials)
     return service
 
-# Fetch movie details from TMDB API
-def get_movie_details(movie_name):
-    api_key = os.getenv("TMDB_API_KEY")
-    if not api_key:
-        raise ValueError("TMDB_API_KEY is not set.")
-    url = f"https://api.themoviedb.org/3/search/movie"
-    params = {
-        "api_key": api_key,
-        "query": movie_name,
-        "include_adult": False,
-        "language": "en-US",
-        "page": 1
-    }
-    try:
-        response = requests.get(url, params=params, timeout=10)
-        response.raise_for_status()
-        results = response.json().get("results", [])
-        sorted_results = sorted(results, key=lambda x: x.get("popularity", 0), reverse=True)
-        return sorted_results
-    except requests.exceptions.RequestException as e:
-        print(f"Error fetching movie details: {e}")
-        return []
-
-# Post to Blogger
-def post_to_blogger(service, blog_id, title, content, poster_url):
+# Function to post to Blogger
+async def post_to_blogger(service, blog_id, title, content):
     body = {
-        "kind": "blogger#post",
-        "blog": {"id": blog_id},
         "title": title,
-        "content": f"<img src='{poster_url}'/><br>{content}"
+        "content": content,
+        "labels": ["Telegram Bot", "Movies"],
     }
-    try:
-        post = service.posts().insert(blogId=blog_id, body=body, isDraft=False).execute()
-        return post["url"]
-    except Exception as e:
-        print(f"Error posting to Blogger: {e}")
-        return None
+    post = service.posts().insert(blogId=blog_id, body=body, isDraft=False).execute()
+    return post
 
-# Handle movie search
-async def handle_movie_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = ' '.join(context.args)
-    if not query:
-        await update.message.reply_text("Please provide a movie name to search.")
-        return
+# Telegram bot command to start
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Send me a movie name to search and post to Blogger!")
 
-    movies = get_movie_details(query)
-    if not movies:
-        await update.message.reply_text(f"No movies found for '{query}'.")
-        return
+# Telegram bot message handler
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.message.text
+    await update.message.reply_text(f"Searching for movies related to '{query}'...")
 
-    buttons = [
-        [InlineKeyboardButton(f"{i + 1}. {movie['title']} ({movie['release_date']})", callback_data=str(i))]
-        for i, movie in enumerate(movies[:10])
+    # Simulate movie details (replace this with your movie API logic)
+    movies = [
+        {"title": "Example Movie 1", "overview": "Overview for Example Movie 1"},
+        {"title": "Example Movie 2", "overview": "Overview for Example Movie 2"},
     ]
-    reply_markup = InlineKeyboardMarkup(buttons)
-    await update.message.reply_text(f"Found movies for '{query}':", reply_markup=reply_markup)
+
+    # Send movie options to the user
+    response = "Found movies:\n"
+    for i, movie in enumerate(movies, start=1):
+        response += f"{i}. {movie['title']}\n"
+    response += "Please reply with the movie number to post to Blogger."
+    await update.message.reply_text(response)
+
+    # Save movies to context for later use
     context.user_data["movies"] = movies
 
-# Handle movie selection
+# Telegram bot handler for movie selection
 async def handle_movie_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    movie_index = int(query.data)
-    movies = context.user_data.get("movies", [])
-    if movie_index >= len(movies):
-        await query.message.reply_text("Invalid selection.")
-        return
+    try:
+        # Get the selected movie index
+        movie_index = int(update.message.text) - 1
+        movies = context.user_data.get("movies", [])
 
-    movie = movies[movie_index]
-    service = authenticate_blogger()
-    blog_id = "2426657398890190336"
+        if 0 <= movie_index < len(movies):
+            selected_movie = movies[movie_index]
 
-    title = movie["title"]
-    overview = movie.get("overview", "No description available.")
-    poster_url = f"https://image.tmdb.org/t/p/w500{movie['poster_path']}" if movie.get("poster_path") else "https://via.placeholder.com/500"
+            # Post the selected movie to Blogger
+            service = authenticate_blogger()
+            blog_id = "2426657398890190336"  # Your Blogger blog ID
+            post = await post_to_blogger(service, blog_id, selected_movie["title"], selected_movie["overview"])
 
-    post_url = post_to_blogger(service, blog_id, title, overview, poster_url)
-    if post_url:
-        await query.message.reply_text(f"Movie '{title}' posted to Blogger: {post_url}")
-    else:
-        await query.message.reply_text(f"Failed to post '{title}' to Blogger.")
-
-# Start command
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Welcome to the Movie Bot! Use /search <movie name> to get started.")
+            await update.message.reply_text(f"Posted to Blogger! View it here: {post['url']}")
+        else:
+            await update.message.reply_text("Invalid selection. Please try again.")
+    except Exception as e:
+        await update.message.reply_text(f"An error occurred: {str(e)}")
 
 # Main function to run the bot
 def main():
-    bot_token = os.getenv("BOT_TOKEN")
+    bot_token = os.environ.get("BOT_TOKEN")
     if not bot_token:
-        raise ValueError("BOT_TOKEN is not set.")
+        raise ValueError("BOT_TOKEN environment variable not set.")
 
-    application = ApplicationBuilder().token(bot_token).build()
+    application = Application.builder().token(bot_token).build()
 
+    # Handlers
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("search", handle_movie_search))
-    application.add_handler(CallbackQueryHandler(handle_movie_selection))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    application.add_handler(MessageHandler(filters.TEXT & filters.Regex(r"^\d+$"), handle_movie_selection))
 
+    # Run the bot
     application.run_polling()
 
 if __name__ == "__main__":
