@@ -1,113 +1,114 @@
 import os
-import json
 import logging
-from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
-from google.oauth2 import service_account
-from googleapiclient.discovery import build
 import requests
+from telegram import Update, Bot
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+from google.oauth2.service_account import Credentials
+from googleapiclient.discovery import build
 
-# Enable logging
+# Logging setup
 logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO,
 )
 logger = logging.getLogger(__name__)
 
-# Blogger API Setup
-SCOPES = ['https://www.googleapis.com/auth/blogger']
-BLOG_ID = '2426657398890190336'  # Replace with your Blogger blog ID
-
-# Authenticate with Blogger using JSON data from environment variables
+# Blogger setup
 def authenticate_blogger():
-    credentials_info = json.loads(os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON"))
-    credentials = service_account.Credentials.from_service_account_info(
-        credentials_info, scopes=SCOPES
-    )
-    service = build('blogger', 'v3', credentials=credentials)
-    return service
+    credentials_json = os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON")
+    if not credentials_json:
+        raise ValueError("GOOGLE_APPLICATION_CREDENTIALS_JSON is not set.")
+    credentials = Credentials.from_service_account_info(eval(credentials_json))
+    return build("blogger", "v3", credentials=credentials)
 
-# Fetch movie details from an API
+def create_blogger_post(title, content):
+    service = authenticate_blogger()
+    blog_id = "YOUR_BLOGGER_BLOG_ID"  # Replace with your Blogger blog ID
+    post_body = {
+        "title": title,
+        "content": content,
+        "labels": ["Movies", "Telegram Bot"]
+    }
+    service.posts().insert(blogId=blog_id, body=post_body, isDraft=False).execute()
+    logger.info(f"Posted to Blogger: {title}")
+
+# Movie API integration
 def get_movie_details(movie_name):
-    url = f'https://api.example.com/movies?query={movie_name}'  # Replace with actual API URL
-    response = requests.get(url)
-    if response.status_code == 200:
-        return response.json()['results']
-    else:
-        logger.error("Failed to fetch movie details.")
+    api_key = os.getenv("TMDB_API_KEY")
+    if not api_key:
+        raise ValueError("TMDB_API_KEY is not set.")
+    url = f"https://api.themoviedb.org/3/search/movie?api_key={api_key}&query={movie_name}"
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        return response.json().get("results", [])
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Error fetching movie details: {e}")
         return []
 
-# Post to Blogger
-def post_to_blogger(service, title, content, image_url):
-    body = {
-        'kind': 'blogger#post',
-        'blog': {'id': BLOG_ID},
-        'title': title,
-        'content': f"<h1>{title}</h1><img src='{image_url}' alt='{title}'><p>{content}</p>"
-    }
-    try:
-        post = service.posts().insert(blogId=BLOG_ID, body=body).execute()
-        logger.info(f"Post created: {post['url']}")
-        return post['url']
-    except Exception as e:
-        logger.error(f"An error occurred while posting to Blogger: {e}")
-        return None
+# Telegram bot handlers
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Hello! Send a movie name to get its details.")
 
-# Handler to search for movies
 async def handle_movie_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = ' '.join(context.args)
-    if not query:
-        await update.message.reply_text("Please provide a movie name.")
-        return
-
-    movies = get_movie_details(query)
+    movie_name = update.message.text
+    movies = get_movie_details(movie_name)
     if not movies:
-        await update.message.reply_text("No movies found.")
+        await update.message.reply_text("No movies found. Try another name.")
         return
+    
+    response_text = "Found movies:\n"
+    for i, movie in enumerate(movies[:10], start=1):
+        title = movie.get("title", "N/A")
+        release_date = movie.get("release_date", "Unknown")
+        response_text += f"{i}. {title} ({release_date})\n"
+    response_text += "Please reply with the movie number to post to Blogger."
 
-    movie_list = "\n".join([f"{i + 1}. {movie['title']} ({movie['release_date']})" for i, movie in enumerate(movies[:10])])
-    context.user_data['movies'] = movies
-    await update.message.reply_text(f"Found movies:\n{movie_list}\n\nPlease reply with the movie number.")
+    # Store movies in context for selection
+    context.user_data["movies"] = movies
+    await update.message.reply_text(response_text)
 
-# Handler to handle movie selection and post to Blogger
 async def handle_movie_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
-        movie_index = int(update.message.text) - 1
-        movies = context.user_data.get('movies', [])
+        selection = int(update.message.text) - 1
+        movies = context.user_data.get("movies", [])
+        if selection < 0 or selection >= len(movies):
+            await update.message.reply_text("Invalid selection. Try again.")
+            return
 
-        if 0 <= movie_index < len(movies):
-            selected_movie = movies[movie_index]
-            title = selected_movie['title']
-            overview = selected_movie.get('overview', 'No overview available.')
-            poster_path = selected_movie.get('poster_path', '')
-            image_url = f"https://image.tmdb.org/t/p/w500{poster_path}" if poster_path else ''
+        # Selected movie details
+        selected_movie = movies[selection]
+        title = selected_movie.get("title", "N/A")
+        overview = selected_movie.get("overview", "No description available.")
+        poster_path = selected_movie.get("poster_path", "")
+        poster_url = f"https://image.tmdb.org/t/p/w500{poster_path}" if poster_path else "No poster available."
 
-            service = authenticate_blogger()
-            post_url = post_to_blogger(service, title, overview, image_url)
-            if post_url:
-                await update.message.reply_text(f"Movie posted to Blogger: {post_url}")
-            else:
-                await update.message.reply_text("Failed to post movie to Blogger.")
-        else:
-            await update.message.reply_text("Invalid selection.")
+        # Post to Blogger
+        content = f"<h2>{title}</h2><p>{overview}</p>"
+        if poster_path:
+            content += f'<img src="{poster_url}" alt="{title} poster"/>'
+        create_blogger_post(title, content)
+
+        await update.message.reply_text(f"Posted to Blogger: {title}")
     except ValueError:
-        await update.message.reply_text("Please reply with a valid movie number.")
+        await update.message.reply_text("Please enter a valid number.")
+    except Exception as e:
+        logger.error(f"Error: {e}")
+        await update.message.reply_text("An error occurred while posting to Blogger.")
 
-# Start command
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Hello! Send /movie <movie name> to search for a movie.")
-
-# Main function to set up the bot
+# Main function
 def main():
     token = os.getenv("BOT_TOKEN")
-    application = Application.builder().token(token).build()
+    if not token:
+        raise ValueError("BOT_TOKEN is not set.")
+    
+    app = ApplicationBuilder().token(token).build()
 
-    # Handlers
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("movie", handle_movie_search))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_movie_selection))
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("movie", handle_movie_search))
+    app.add_handler(CommandHandler("select", handle_movie_selection))
 
-    # Run bot
-    application.run_polling()
+    app.run_polling()
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
