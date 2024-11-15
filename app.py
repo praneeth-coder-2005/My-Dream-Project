@@ -1,7 +1,7 @@
 import os
 import time
 from pyrogram import Client
-from pyrogram.errors import BadMsgNotification, FloodWaitError
+from pyrogram.errors import BadMsgNotification, FloodWait  # Corrected import here
 
 # Fetch API credentials from environment variables
 api_id = os.getenv('API_ID')  # The API ID you got from Telegram
@@ -25,7 +25,7 @@ def start_bot_with_retries():
             print(f"BadMsgNotification Error: {e}. Retrying in {backoff_time} seconds...")
             time.sleep(backoff_time)  # Wait for time to sync
             backoff_time *= 2  # Exponential backoff: double the wait time
-        except FloodWaitError as e:
+        except FloodWait as e:  # Use the correct exception name here
             print(f"FloodWaitError: Telegram says wait for {e.x} seconds. Retrying in {e.x} seconds...")
             time.sleep(e.x)  # Wait for the required amount of time specified by Telegram
         except Exception as e:
