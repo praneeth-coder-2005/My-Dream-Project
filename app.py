@@ -1,12 +1,11 @@
 import os
 import logging
-import asyncio
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackContext, filters
+import requests
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
-import requests
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -136,9 +135,7 @@ async def main():
 
 if __name__ == '__main__':
     try:
+        # No need to call asyncio.run, telegram will manage the event loop
         asyncio.run(main())  # Run the bot with asyncio
     except (KeyboardInterrupt, SystemExit):
         logger.info("Bot stopped")
-        # Graceful shutdown process to avoid the "Cannot close a running event loop" error
-        loop = asyncio.get_event_loop()
-        loop.stop()
