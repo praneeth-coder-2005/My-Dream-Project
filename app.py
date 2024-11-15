@@ -20,32 +20,37 @@ def create_wordpress_post(title, content, status="publish"):
         "status": status  # "publish" or "draft"
     }
 
-    # Make a POST request to WordPress
-    response = requests.post(
-        API_ENDPOINT,
-        headers=headers,
-        json=data,
-        auth=HTTPBasicAuth(WORDPRESS_USERNAME, WORDPRESS_APP_PASSWORD)
-    )
+    try:
+        response = requests.post(
+            API_ENDPOINT,
+            headers=headers,
+            json=data,
+            auth=HTTPBasicAuth(WORDPRESS_USERNAME, WORDPRESS_APP_PASSWORD)
+        )
 
-    if response.status_code == 201:  # HTTP 201 Created
-        return response.json().get("link")
-    else:
-        return f"Failed to create post: {response.status_code} - {response.text}"
+        if response.status_code == 201:  # HTTP 201 Created
+            return response.json().get("link")
+        else:
+            return f"Failed to create post: {response.status_code} - {response.text}"
+    except Exception as e:
+        return f"Error during post creation: {str(e)}"
 
-# Function to search for movies using an API (replace this with TMDB or your preferred movie API)
+# Function to search for movies using TMDB API
 def get_movie_details(movie_name):
     TMDB_API_KEY = "bb5f40c5be4b24660cbdc20c2409835e"  # Replace with your TMDB API Key
     TMDB_API_URL = "https://api.themoviedb.org/3/search/movie"
     params = {"api_key": TMDB_API_KEY, "query": movie_name}
-    response = requests.get(TMDB_API_URL, params=params)
-    if response.status_code == 200:
-        results = response.json().get("results", [])
-        return [
-            {"title": movie.get("title"), "release_date": movie.get("release_date", "Unknown Date")}
-            for movie in results
-        ]
-    else:
+    try:
+        response = requests.get(TMDB_API_URL, params=params)
+        if response.status_code == 200:
+            results = response.json().get("results", [])
+            return [
+                {"title": movie.get("title"), "release_date": movie.get("release_date", "Unknown Date")}
+                for movie in results
+            ]
+        else:
+            return []
+    except Exception as e:
         return []
 
 # Telegram Bot Handlers
@@ -78,7 +83,7 @@ async def handle_movie_selection(update: Update, context: ContextTypes.DEFAULT_T
         title = selected_movie["title"]
         content = f"<h2>{title}</h2><p>Release Date: {selected_movie['release_date']}</p>"
         post_url = create_wordpress_post(title, content)
-        if "http" in post_url:
+        if post_url.startswith("http"):
             await query.edit_message_text(f"Post successfully created: {post_url}")
         else:
             await query.edit_message_text(f"Error posting to WordPress: {post_url}")
@@ -96,4 +101,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-        
