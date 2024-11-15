@@ -1,6 +1,6 @@
 import os
 import time
-from pyrogram import Client
+from pyrogram import Client, filters  # Import filters here
 from pyrogram.errors import BadMsgNotification, FloodWait  # Correct import
 
 # Fetch API credentials from environment variables
@@ -33,12 +33,12 @@ def start_bot_with_retries():
             break
 
 # Define command handlers
-@app.on_message(filters.command("start"))
+@app.on_message(filters.command("start"))  # Use filters for command
 def start(update, context):
     update.message.reply_text("Welcome! Send me the movie name to start.")
 
 # Movie search handler (for non-command text messages)
-@app.on_message(filters.text)
+@app.on_message(filters.text)  # Use filters for text messages
 def handle_movie_search(update, context):
     movie_name = update.message.text.strip()
 
@@ -58,7 +58,7 @@ def handle_movie_search(update, context):
         update.message.reply_text(f"No movies found with the title '{movie_name}'.")
 
 # Handle user input (movie selection)
-@app.on_message(filters.text)
+@app.on_message(filters.text)  # Use filters for text messages
 def select_movie(update, context):
     try:
         selected_movie_index = int(update.message.text) - 1
