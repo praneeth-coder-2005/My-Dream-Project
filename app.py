@@ -1,27 +1,83 @@
 import os
-import requests
 import time
-from pyrogram import Client, filters
-from google_auth_oauthlib.flow import InstalledAppFlow
-from googleapiclient.discovery import build
-from googleapiclient.errors import HttpError
-from pyrogram.errors import BadMsgNotification
-import socket
+from pyrogram import Client
+from pyrogram.errors import BadMsgNotification, FloodWaitError
 
 # Fetch API credentials from environment variables
 api_id = os.getenv('API_ID')  # The API ID you got from Telegram
 api_hash = os.getenv('API_HASH')  # The API Hash you got from Telegram
 bot_token = os.getenv('TELEGRAM_BOT_TOKEN')  # Your Bot Token from BotFather
 
-# Get configuration from environment variables
-TMDB_API_KEY = os.getenv('TMDB_API_KEY')
-BLOG_ID = os.getenv('BLOG_ID')
-CLIENT_ID = os.getenv('CLIENT_ID')
-CLIENT_SECRET = os.getenv('CLIENT_SECRET')
-REDIRECT_URI = os.getenv('REDIRECT_URI', 'http://localhost:8080/oauth2callback')
+# Create the Pyrogram client with session persistence
+app = Client("movie_bot", bot_token=bot_token, api_id=api_id, api_hash=api_hash, session_name="my_session")
 
-# TMDb API Configuration
-TMDB_BASE_URL = 'https://api.themoviedb.org/3/search/movie'
+# Start the bot with retry logic for time sync and flood wait errors
+def start_bot_with_retries():
+    retry_count = 5  # Number of retry attempts
+    backoff_time = 10  # Initial wait time before retrying in seconds
+    
+    for attempt in range(retry_count):
+        try:
+            print(f"Attempt {attempt + 1} to start the bot...")
+            app.start()  # Start the bot session
+            break  # Successfully started the bot, break the loop
+        except BadMsgNotification as e:
+            print(f"BadMsgNotification Error: {e}. Retrying in {backoff_time} seconds...")
+            time.sleep(backoff_time)  # Wait for time to sync
+            backoff_time *= 2  # Exponential backoff: double the wait time
+        except FloodWaitError as e:
+            print(f"FloodWaitError: Telegram says wait for {e.x} seconds. Retrying in {e.x} seconds...")
+            time.sleep(e.x)  # Wait for the required amount of time specified by Telegram
+        except Exception as e:
+            print(f"Unexpected error: {e}. Giving up.")
+            break
+
+# Define command handlers
+@app.on_message(filters.command("start"))
+def start(update, context):
+    update.message.reply_text("Welcome! Send me the movie name to start.")
+
+# Movie search handler (for non-command text messages)
+@app.on_message(filters.text)
+def handle_movie_search(update, context):
+    movie_name = update.message.text.strip()
+
+    # Fetch movie details from TMDb API or database
+    movies = get_movie_details(movie_name)
+
+    if movies:
+        update.message.reply_text(f"Found {len(movies)} movies. Choose the correct one:")
+
+        # Display movie options
+        for i, movie in enumerate(movies):
+            update.message.reply_text(f"{i+1}. {movie['title']} ({movie.get('release_date', 'Unknown')})")
+
+        update.message.reply_text("Please select the movie number.")
+        context.user_data['movies'] = movies  # Store the list of movies for future use
+    else:
+        update.message.reply_text(f"No movies found with the title '{movie_name}'.")
+
+# Handle user input (movie selection)
+@app.on_message(filters.text)
+def select_movie(update, context):
+    try:
+        selected_movie_index = int(update.message.text) - 1
+        movies = context.user_data.get('movies', [])
+
+        if selected_movie_index >= 0 and selected_movie_index < len(movies):
+            selected_movie = movies[selected_movie_index]
+            title = selected_movie['title']
+            description = selected_movie['overview']
+            download_link = "http://example.com/download_link"  # Replace with actual download link
+
+            # Authenticate with Blogger and post the movie details
+            blogger_service = authenticate_blogger()
+            post_to_blogger(blogger_service, title, description, download_link)
+            update.message.reply_text(f"Movie '{title}' has been posted to the blog!")
+        else:
+            update.message.reply_text("Invalid selection. Try again.")
+    except ValueError:
+        update.message.reply_text("Please enter a valid number.")
 
 # Google OAuth: authenticate and post to Blogger
 def authenticate_blogger():
@@ -63,88 +119,5 @@ def post_to_blogger(blogger_service, title, description, download_link):
     except HttpError as err:
         print(f"An error occurred: {err}")
 
-# Pyrogram client to handle incoming messages and commands
-app = Client("movie_bot", bot_token=bot_token, api_id=api_id, api_hash=api_hash)
-
-# Start command to welcome the user
-@app.on_message(filters.command("start"))
-def start(update, context):
-    update.reply_text("Welcome! Send me the movie name to start.")
-
-# Movie search handler (for non-command text messages)
-@app.on_message(filters.text)
-def handle_movie_search(update, context):
-    message = update.text.strip()
-
-    # Check if the message starts with a '/' (i.e., it's a command)
-    if message.startswith('/'):
-        return  # Skip commands and do nothing
-    
-    # Otherwise, treat it as a movie search request
-    movie_name = update.text
-    movies = get_movie_details(movie_name)
-
-    if movies:
-        update.reply_text(f"Found {len(movies)} movies. Choose the correct one:")
-
-        # Display movie options
-        for i, movie in enumerate(movies):
-            update.reply_text(f"{i+1}. {movie['title']} ({movie.get('release_date', 'Unknown')})")
-
-        update.reply_text("Please select the movie number.")
-        context.user_data['movies'] = movies  # Store the list of movies for future use
-    else:
-        update.reply_text(f"No movies found with the title '{movie_name}'.")
-
-# Handle user input (movie selection)
-@app.on_message(filters.text)
-def select_movie(update, context):
-    message = update.text.strip()
-
-    # Check if the message starts with a '/' (i.e., it's a command)
-    if message.startswith('/'):
-        return  # Skip commands and do nothing
-
-    try:
-        selected_movie_index = int(update.text) - 1
-        movies = context.user_data.get('movies', [])
-
-        if selected_movie_index >= 0 and selected_movie_index < len(movies):
-            selected_movie = movies[selected_movie_index]
-            title = selected_movie['title']
-            description = selected_movie['overview']
-            download_link = "http://example.com/download_link"  # Replace with actual download link
-
-            # Authenticate with Blogger and post the movie details
-            blogger_service = authenticate_blogger()
-            post_to_blogger(blogger_service, title, description, download_link)
-            update.reply_text(f"Movie '{title}' has been posted to the blog!")
-        else:
-            update.reply_text("Invalid selection. Try again.")
-    except ValueError:
-        update.reply_text("Please enter a valid number.")
-
-# Function to bind to $PORT for Heroku
-def bind_to_port():
-    port = os.getenv("PORT", 5000)
-    host = "0.0.0.0"  # Bind to all IPs
-    socket.getaddrinfo(host, port)
-
-# Function to synchronize time and handle retries
-def retry_start_bot():
-    retry_count = 5
-    for attempt in range(retry_count):
-        try:
-            print(f"Attempt {attempt + 1} to start the bot...")
-            bind_to_port()  # Ensure we bind to the correct port for Heroku
-            app.start()  # Start the bot session
-            break  # Successfully started the bot, break the loop
-        except BadMsgNotification as e:
-            print(f"Error: {e}. Retrying in 10 seconds...")
-            time.sleep(10)  # Retry delay
-        except Exception as e:
-            print(f"Unexpected error: {e}. Giving up.")
-            break
-
 # Run the bot with retry logic
-retry_start_bot()
+start_bot_with_retries()
