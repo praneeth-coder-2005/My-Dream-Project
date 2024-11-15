@@ -1,19 +1,42 @@
+import requests
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler, filters
-from wordpress_xmlrpc import Client, WordPressPost
-from wordpress_xmlrpc.methods.posts import NewPost
-import requests
+from requests.auth import HTTPBasicAuth
 
-# WordPress XML-RPC configuration
-WORDPRESS_XMLRPC_URL = "https://clawfilezz.in/xmlrpc.php"
-WORDPRESS_USERNAME = "admin"  # Replace with your username
-WORDPRESS_PASSWORD = "pass"   # Replace with your password
+# WordPress REST API configuration
+WORDPRESS_SITE_URL = "https://clawfilezz.in"  # Replace with your WordPress site URL
+WORDPRESS_USERNAME = "admin"  # Replace with your WordPress username
+WORDPRESS_APP_PASSWORD = "Ehvh Ryr0 WXnI Z61H wdI6 ilVP"  # Replace with the 24-character application password
 
-# TMDB API Integration
-TMDB_API_KEY = "bb5f40c5be4b24660cbdc20c2409835e"  # Replace with your TMDB API Key
-TMDB_API_URL = "https://api.themoviedb.org/3/search/movie"
+# WordPress REST API endpoint for creating posts
+API_ENDPOINT = f"{WORDPRESS_SITE_URL}/wp-json/wp/v2/posts"
 
+# Function to create a WordPress post
+def create_wordpress_post(title, content, status="publish"):
+    headers = {"Content-Type": "application/json"}
+    data = {
+        "title": title,
+        "content": content,
+        "status": status  # "publish" or "draft"
+    }
+
+    # Make a POST request to WordPress
+    response = requests.post(
+        API_ENDPOINT,
+        headers=headers,
+        json=data,
+        auth=HTTPBasicAuth(WORDPRESS_USERNAME, WORDPRESS_APP_PASSWORD)
+    )
+
+    if response.status_code == 201:  # HTTP 201 Created
+        return response.json().get("link")
+    else:
+        return f"Failed to create post: {response.status_code} - {response.text}"
+
+# Function to search for movies using an API (replace this with TMDB or your preferred movie API)
 def get_movie_details(movie_name):
+    TMDB_API_KEY = "bb5f40c5be4b24660cbdc20c2409835e"  # Replace with your TMDB API Key
+    TMDB_API_URL = "https://api.themoviedb.org/3/search/movie"
     params = {"api_key": TMDB_API_KEY, "query": movie_name}
     response = requests.get(TMDB_API_URL, params=params)
     if response.status_code == 200:
@@ -24,24 +47,6 @@ def get_movie_details(movie_name):
         ]
     else:
         return []
-
-# Function to create a WordPress post using XML-RPC
-def create_wordpress_post(title, content):
-    # Set up the XML-RPC client
-    client = Client(WORDPRESS_XMLRPC_URL, WORDPRESS_USERNAME, WORDPRESS_PASSWORD)
-    
-    # Create a new post
-    post = WordPressPost()
-    post.title = title
-    post.content = content
-    post.post_status = 'publish'  # You can use 'draft' if you don't want to publish immediately
-    
-    try:
-        post_id = client.call(NewPost(post))
-        post_url = f"{WORDPRESS_XMLRPC_URL}?p={post_id}"
-        return post_url
-    except Exception as e:
-        return f"Error: {str(e)}"
 
 # Telegram Bot Handlers
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -82,8 +87,7 @@ async def handle_movie_selection(update: Update, context: ContextTypes.DEFAULT_T
 
 # Main Function
 def main():
-    TELEGRAM_BOT_TOKEN = "8148506170:AAHPk5Su4ADx3pg2iRlbLTVOv7PlnNIDNqo"  # Replace with your Telegram bot token
-    application = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
+    application = ApplicationBuilder().token("8148506170:AAHPk5Su4ADx3pg2iRlbLTVOv7PlnNIDNqo").build()  # Replace with your bot token
     application.add_handler(CommandHandler("start", start))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_movie_search))
     application.add_handler(CallbackQueryHandler(handle_movie_selection))
