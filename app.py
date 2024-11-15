@@ -82,23 +82,26 @@ async def handle_movie_selection(update: Update, context: ContextTypes.DEFAULT_T
         return
 
     try:
-        movie_index = int(update.message.text.strip()) - 1  # Convert input to index
-        if 0 <= movie_index < len(movies):
-            selected_movie = movies[movie_index]
-            service = authenticate_blogger()
-            blog_id = "2426657398890190336"  # Your Blogger blog ID
+        # Make sure the input is a valid number and within the range of available movie numbers
+        user_input = update.message.text.strip()
+        movie_index = int(user_input) - 1  # Convert input to index
+        if movie_index < 0 or movie_index >= len(movies):
+            await update.message.reply_text("Invalid movie number. Please enter a number between 1 and " + str(len(movies)) + ".")
+            return
+        
+        selected_movie = movies[movie_index]
+        service = authenticate_blogger()
+        blog_id = "2426657398890190336"  # Your Blogger blog ID
 
-            # Build content with movie details
-            title = selected_movie["title"]
-            content = f"**Title:** {selected_movie['title']}<br>"
-            content += f"**Overview:** {selected_movie.get('overview', 'No description available.')}<br>"
-            content += f"**Release Date:** {selected_movie.get('release_date', 'Unknown Date')}<br>"
+        # Build content with movie details
+        title = selected_movie["title"]
+        content = f"**Title:** {selected_movie['title']}<br>"
+        content += f"**Overview:** {selected_movie.get('overview', 'No description available.')}<br>"
+        content += f"**Release Date:** {selected_movie.get('release_date', 'Unknown Date')}<br>"
 
-            # Post to Blogger
-            post = await post_to_blogger(service, blog_id, title, content)
-            await update.message.reply_text(f"Posted to Blogger! View it here: {post['url']}")
-        else:
-            await update.message.reply_text("Invalid movie number. Please try again.")
+        # Post to Blogger
+        post = await post_to_blogger(service, blog_id, title, content)
+        await update.message.reply_text(f"Posted to Blogger! View it here: {post['url']}")
     except ValueError:
         await update.message.reply_text("Please enter a valid movie number.")
     except Exception as e:
