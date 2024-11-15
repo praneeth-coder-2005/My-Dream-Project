@@ -1,30 +1,14 @@
 import os
-import requests
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler, filters
+from wordpress_xmlrpc import Client, WordPressPost
+from wordpress_xmlrpc.methods.posts import NewPost
+import requests
 
-# WordPress credentials
-WORDPRESS_SITE_URL = "https://clawfilezz.in"
+# WordPress XML-RPC configuration
+WORDPRESS_XMLRPC_URL = "https://clawfilezz.in/xmlrpc.php"
 WORDPRESS_USERNAME = os.getenv("WORDPRESS_USERNAME")  # Replace with your username if not using env
-WORDPRESS_APP_PASSWORD = os.getenv("WORDPRESS_APP_PASSWORD")  # Replace with your application password if not using env
-
-# WordPress REST API endpoint for creating posts
-API_ENDPOINT = f"{WORDPRESS_SITE_URL}/wp-json/wp/v2/posts"
-
-# Function to create a WordPress post
-def create_wordpress_post(title, content, status="publish"):
-    auth = (WORDPRESS_USERNAME, WORDPRESS_APP_PASSWORD)
-    headers = {"Content-Type": "application/json"}
-    data = {"title": title, "content": content, "status": status}
-
-    try:
-        response = requests.post(API_ENDPOINT, headers=headers, json=data, auth=auth)
-        if response.status_code == 201:
-            return response.json().get("link")
-        else:
-            return f"Error: {response.status_code}, {response.json().get('message')}"
-    except requests.exceptions.RequestException as e:
-        return f"Request error: {str(e)}"
+WORDPRESS_PASSWORD = os.getenv("WORDPRESS_PASSWORD")  # Replace with your password if not using env
 
 # TMDB API Integration
 TMDB_API_KEY = os.getenv("TMDB_API_KEY")
@@ -41,6 +25,24 @@ def get_movie_details(movie_name):
         ]
     else:
         return []
+
+# Function to create a WordPress post using XML-RPC
+def create_wordpress_post(title, content):
+    # Set up the XML-RPC client
+    client = Client(WORDPRESS_XMLRPC_URL, WORDPRESS_USERNAME, WORDPRESS_PASSWORD)
+    
+    # Create a new post
+    post = WordPressPost()
+    post.title = title
+    post.content = content
+    post.post_status = 'publish'  # You can use 'draft' if you don't want to publish immediately
+    
+    try:
+        post_id = client.call(NewPost(post))
+        post_url = f"{WORDPRESS_XMLRPC_URL}?p={post_id}"
+        return post_url
+    except Exception as e:
+        return f"Error: {str(e)}"
 
 # Telegram Bot Handlers
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
