@@ -1,8 +1,7 @@
 import os
 import logging
 from telegram import Update
-from telegram.ext import Updater, CommandHandler, MessageHandler, filters, CallbackContext
-from telegram.ext import Application
+from telegram.ext import Application, CommandHandler, MessageHandler, CallbackContext, filters
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
@@ -30,31 +29,31 @@ TMDB_BASE_URL = 'https://api.themoviedb.org/3/search/movie'
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Define a command handler for the /start command
-def start(update: Update, context: CallbackContext):
-    update.message.reply_text("Welcome! Send me the movie name to start.")
+# Define an asynchronous command handler for the /start command
+async def start(update: Update, context: CallbackContext):
+    await update.message.reply_text("Welcome! Send me the movie name to start.")
 
 # Handle incoming movie search requests
-def handle_movie_search(update: Update, context: CallbackContext):
+async def handle_movie_search(update: Update, context: CallbackContext):
     movie_name = update.message.text.strip()
 
     # Fetch movie details
     movies = get_movie_details(movie_name)
 
     if movies:
-        update.message.reply_text(f"Found {len(movies)} movies. Choose the correct one:")
+        await update.message.reply_text(f"Found {len(movies)} movies. Choose the correct one:")
 
         # Display movie options
         for i, movie in enumerate(movies):
-            update.message.reply_text(f"{i+1}. {movie['title']} ({movie.get('release_date', 'Unknown')})")
+            await update.message.reply_text(f"{i+1}. {movie['title']} ({movie.get('release_date', 'Unknown')})")
 
-        update.message.reply_text("Please select the movie number.")
+        await update.message.reply_text("Please select the movie number.")
         context.user_data['movies'] = movies  # Store the list of movies for future use
     else:
-        update.message.reply_text(f"No movies found with the title '{movie_name}'.")
+        await update.message.reply_text(f"No movies found with the title '{movie_name}'.")
 
 # Handle user selection of a movie
-def select_movie(update: Update, context: CallbackContext):
+async def select_movie(update: Update, context: CallbackContext):
     try:
         selected_movie_index = int(update.message.text) - 1
         movies = context.user_data.get('movies', [])
@@ -68,11 +67,11 @@ def select_movie(update: Update, context: CallbackContext):
             # Authenticate with Blogger and post the movie details
             blogger_service = authenticate_blogger()
             post_to_blogger(blogger_service, title, description, download_link)
-            update.message.reply_text(f"Movie '{title}' has been posted to the blog!")
+            await update.message.reply_text(f"Movie '{title}' has been posted to the blog!")
         else:
-            update.message.reply_text("Invalid selection. Try again.")
+            await update.message.reply_text("Invalid selection. Try again.")
     except ValueError:
-        update.message.reply_text("Please enter a valid number.")
+        await update.message.reply_text("Please enter a valid number.")
 
 # Google OAuth: authenticate and post to Blogger
 def authenticate_blogger():
@@ -115,19 +114,20 @@ def post_to_blogger(blogger_service, title, description, download_link):
         print(f"An error occurred: {err}")
 
 # Set up webhook for receiving messages
-def setup_webhook():
+async def setup_webhook():
     application = Application.builder().token(bot_token).build()
     
     # Set up the webhook (replace with your actual URL)
     webhook_url = 'https://your-app.herokuapp.com/webhook'  # Set your webhook URL here
-    application.bot.set_webhook(url=webhook_url)
+    await application.bot.set_webhook(url=webhook_url)
     
     # Add handlers
     application.add_handler(CommandHandler('start', start))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_movie_search))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, select_movie))
 
-    application.run_polling()
+    await application.run_polling()
 
 if __name__ == '__main__':
-    setup_webhook()
+    import asyncio
+    asyncio.run(setup_webhook())
