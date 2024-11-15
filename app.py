@@ -126,7 +126,7 @@ async def setup_webhook():
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_movie_search))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, select_movie))
 
-    # Run the bot
+    # Run the bot with polling
     await application.run_polling()
 
 # Main function to start the bot with graceful shutdown
@@ -134,8 +134,9 @@ async def main():
     await setup_webhook()
 
 if __name__ == '__main__':
+    # Directly call the main function which uses the built-in event loop handling of python-telegram-bot
+    import asyncio
     try:
-        # No need to call asyncio.run, telegram will manage the event loop
         asyncio.run(main())  # Run the bot with asyncio
     except (KeyboardInterrupt, SystemExit):
         logger.info("Bot stopped")
