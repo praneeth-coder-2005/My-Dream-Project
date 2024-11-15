@@ -37,7 +37,7 @@ def fetch_movies_from_tmdb(query):
 
 
 # Post to Blogger
-async def post_to_blogger(service, blog_id, title, content):
+def post_to_blogger(service, blog_id, title, content):
     body = {
         "title": title,
         "content": content,
@@ -64,7 +64,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(f"No movies found for '{query}'. Please try another search.")
             return
 
-        context.user_data["movies"] = movies  # Save movies in context
+        # Save movies with indices in context
+        context.user_data["movies"] = {str(i + 1): movie for i, movie in enumerate(movies)}
+
         response = "Found movies:\n"
         for i, movie in enumerate(movies, start=1):
             response += f"{i}. {movie['title']} ({movie.get('release_date', 'Unknown Date')})\n"
@@ -76,36 +78,33 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # Handle Movie Selection
 async def handle_movie_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    movies = context.user_data.get("movies", [])
+    user_input = update.message.text.strip()
+    movies = context.user_data.get("movies", {})
+
     if not movies:
         await update.message.reply_text("No movies found. Please search again.")
         return
 
+    if user_input not in movies:
+        await update.message.reply_text("Please enter a valid movie number.")
+        return
+
     try:
-        # Make sure the input is a valid number and within the range of available movie numbers
-        user_input = update.message.text.strip()
-        movie_index = int(user_input) - 1  # Convert input to index
-        if movie_index < 0 or movie_index >= len(movies):
-            await update.message.reply_text("Invalid movie number. Please enter a number between 1 and " + str(len(movies)) + ".")
-            return
-        
-        selected_movie = movies[movie_index]
+        selected_movie = movies[user_input]
         service = authenticate_blogger()
         blog_id = "2426657398890190336"  # Your Blogger blog ID
 
         # Build content with movie details
         title = selected_movie["title"]
-        content = f"**Title:** {selected_movie['title']}<br>"
-        content += f"**Overview:** {selected_movie.get('overview', 'No description available.')}<br>"
-        content += f"**Release Date:** {selected_movie.get('release_date', 'Unknown Date')}<br>"
+        content = f"<strong>Title:</strong> {selected_movie['title']}<br>"
+        content += f"<strong>Overview:</strong> {selected_movie.get('overview', 'No description available.')}<br>"
+        content += f"<strong>Release Date:</strong> {selected_movie.get('release_date', 'Unknown Date')}<br>"
 
         # Post to Blogger
-        post = await post_to_blogger(service, blog_id, title, content)
+        post = post_to_blogger(service, blog_id, title, content)
         await update.message.reply_text(f"Posted to Blogger! View it here: {post['url']}")
-    except ValueError:
-        await update.message.reply_text("Please enter a valid movie number.")
     except Exception as e:
-        await update.message.reply_text(f"An error occurred: {str(e)}")
+        await update.message.reply_text(f"An error occurred while posting to Blogger: {str(e)}")
 
 
 # Main Function
@@ -118,7 +117,7 @@ def main():
 
     # Handlers
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & ~filters.Regex(r"^\d+$"), handle_message))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.Regex(r"^\d+$"), handle_message))
     application.add_handler(MessageHandler(filters.Regex(r"^\d+$"), handle_movie_selection))
 
     # Run the bot
