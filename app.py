@@ -78,19 +78,21 @@ async def handle_add_download_link(update: Update, context: ContextTypes.DEFAULT
     await query.answer()
     post_id = query.data.split("_")[1]
     context.user_data["addlink_post_id"] = post_id
+    context.user_data["awaiting_title"] = True  # Set state for awaiting title
     await query.edit_message_text("Send the title for the download link:")
 
-async def handle_download_link_title(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    post_id = context.user_data.get("addlink_post_id")
-    if post_id:
+async def handle_download_link_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if context.user_data.get("awaiting_title"):
         context.user_data["download_link_title"] = update.message.text
+        context.user_data["awaiting_title"] = False
+        context.user_data["awaiting_url"] = True
         await update.message.reply_text("Send the URL for the download link:")
-
-async def handle_download_link_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    post_id = context.user_data.get("addlink_post_id")
-    title = context.user_data.get("download_link_title")
-    if post_id and title:
+    elif context.user_data.get("awaiting_url"):
+        post_id = context.user_data.get("addlink_post_id")
+        title = context.user_data.get("download_link_title")
         url = update.message.text
+        context.user_data["awaiting_url"] = False
+
         # Fetch the current content of the post
         post_response = requests.get(
             f"{POSTS_API_ENDPOINT}/{post_id}",
@@ -108,10 +110,9 @@ async def handle_download_link_url(update: Update, context: ContextTypes.DEFAULT
         else:
             await update.message.reply_text("Failed to fetch post content.")
         # Clear user data after completing the process
-        context.user_data.pop("addlink_post_id", None)
-        context.user_data.pop("download_link_title", None)
+        context.user_data.clear()
     else:
-        await update.message.reply_text("No post or title selected for adding a download link.")
+        await update.message.reply_text("Unexpected input. Please use /list_posts to start again.")
 
 # Main Function
 def main():
@@ -120,8 +121,7 @@ def main():
     application.add_handler(CommandHandler("list_posts", list_posts))
     application.add_handler(CallbackQueryHandler(handle_post_action, pattern="^post_"))
     application.add_handler(CallbackQueryHandler(handle_add_download_link, pattern="^addlink_"))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_download_link_title))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_download_link_url))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_download_link_input))
 
     application.run_polling()
 
