@@ -11,6 +11,29 @@ WORDPRESS_APP_PASSWORD = "Ehvh Ryr0 WXnI Z61H wdI6 ilVP"
 # WordPress REST API endpoint
 POSTS_API_ENDPOINT = f"{WORDPRESS_SITE_URL}/wp-json/wp/v2/posts"
 
+# TMDB API configuration
+TMDB_API_KEY = "bb5f40c5be4b24660cbdc20c2409835e"
+TMDB_API_URL = "https://api.themoviedb.org/3/search/movie"
+
+# Function to fetch movie details from TMDB
+def get_movie_details_tmdb(movie_name):
+    params = {"api_key": TMDB_API_KEY, "query": movie_name}
+    try:
+        response = requests.get(TMDB_API_URL, params=params)
+        if response.status_code == 200:
+            results = response.json().get("results", [])
+            if results:
+                movie = results[0]  # Assuming first result is most relevant
+                return {
+                    "title": movie.get("title"),
+                    "release_date": movie.get("release_date", "Unknown Date"),
+                    "overview": movie.get("overview", "No overview available."),
+                    "poster_path": f"https://image.tmdb.org/t/p/w500{movie.get('poster_path')}" if movie.get("poster_path") else None
+                }
+    except Exception as e:
+        return None
+    return None
+
 # Function to list posts from WordPress
 def list_wordpress_posts():
     response = requests.get(
@@ -32,6 +55,42 @@ def update_wordpress_post(post_id, content):
         json=data,
         auth=HTTPBasicAuth(WORDPRESS_USERNAME, WORDPRESS_APP_PASSWORD)
     )
+    return response.status_code == 200
+
+# Function to generate download link HTML
+def generate_download_link_html(download_title, download_url):
+    return f'<a href="{download_url}" target="_blank">{download_title}</a><br>'
+
+# Function to create or update WordPress post with download link handling
+def create_or_update_wordpress_post(title, content, download_links):
+    headers = {"Content-Type": "application/json"}
+    
+    # Check if the post already exists based on title
+    existing_posts = requests.get(POSTS_API_ENDPOINT, params={'search': title}, auth=HTTPBasicAuth(WORDPRESS_USERNAME, WORDPRESS_APP_PASSWORD))
+    if existing_posts.status_code == 200 and existing_posts.json():
+        # Post exists, update it
+        post_id = existing_posts.json()[0]['id']
+        new_content = f"{content}<br><br>{download_links}"  # Append download links to existing content
+        data = {"content": new_content}
+        response = requests.post(
+            f"{POSTS_API_ENDPOINT}/{post_id}",
+            headers=headers,
+            json=data,
+            auth=HTTPBasicAuth(WORDPRESS_USERNAME, WORDPRESS_APP_PASSWORD)
+        )
+    else:
+        # Create new post
+        data = {
+            "title": title,
+            "content": f"{content}<br><br>{download_links}",
+            "status": "publish"
+        }
+        response = requests.post(
+            POSTS_API_ENDPOINT,
+            headers=headers,
+            json=data,
+            auth=HTTPBasicAuth(WORDPRESS_USERNAME, WORDPRESS_APP_PASSWORD)
+        )
     return response.status_code == 200
 
 # Telegram Bot Handlers
@@ -94,7 +153,6 @@ async def handle_video_player_input(update: Update, context: ContextTypes.DEFAUL
         <script src="//content.jwplatform.com/libraries/IDzF9Zmk.js"></script>
         <div id="my-video1"></div>
         <script>
-        // <![CDATA[
         jwplayer('my-video1').setup({{
           "playlist": [
             {{
@@ -112,18 +170,15 @@ async def handle_video_player_input(update: Update, context: ContextTypes.DEFAUL
           "hlshtml": true,
           "autostart": false
         }});
-        // ]]>
         </script>
         """
 
-        # Fetch the current content of the post
         post_response = requests.get(
             f"{POSTS_API_ENDPOINT}/{post_id}",
             auth=HTTPBasicAuth(WORDPRESS_USERNAME, WORDPRESS_APP_PASSWORD)
         )
         if post_response.status_code == 200:
             post_content = post_response.json().get("content", {}).get("rendered", "")
-            # Append the video player code
             new_content = f"{post_content}<br>{video_player_code}"
             success = update_wordpress_post(post_id, new_content)
             if success:
@@ -132,20 +187,45 @@ async def handle_video_player_input(update: Update, context: ContextTypes.DEFAUL
                 await update.message.reply_text(f"Failed to add video player to Post {post_id}.")
         else:
             await update.message.reply_text("Failed to fetch post content.")
-        # Clear user data after completing the process
         context.user_data.clear()
     else:
         await update.message.reply_text("Unexpected input. Please use /list_posts to start again.")
 
+async def process_channel_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    message = update.message.text
+    if "Download link" in message and message.startswith("https://"):
+        movie_name = "Extracted movie name"  # Placeholder for extraction logic
+        download_url = message.strip()
+        
+        movie_details = get_movie_details_tmdb(movie_name)
+        if movie_details:
+            title = movie_details['title']
+            content = (
+                f"<h2>{title}</h2>"
+                f"<p>Release Date: {movie_details['release_date']}</p>"
+                f"<p>Overview: {movie_details['overview']}</p>"
+            )
+            download_link_html = generate_download_link_html("Download Link", download_url)
+            success = create_or_update_wordpress_post(title, content, download_link_html)
+            if success:
+                await update.message.reply_text(f"Movie '{title}' posted or updated on WordPress with download link.")
+            else:
+                await update.message.reply_text("Failed to post movie details to WordPress.")
+        else:
+            await update.message.reply_text("Could not fetch movie details from TMDB.")
+
 # Main Function
 def main():
-    application = ApplicationBuilder().token("8148506170:AAHPk5Su4ADx3pg2iRlbLTVOv7PlnNIDNqo").build()
+    application = ApplicationBuilder().token("YOUR_TELEGRAM_BOT_TOKEN").build()
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("list_posts", list_posts))
     application.add_handler(CallbackQueryHandler(handle_post_action, pattern="^post_\\d+$"))
     application.add_handler(CallbackQueryHandler(handle_add_video_player, pattern="^addvideo_\\d+$"))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_video_player_input))
+    
+    # Channel message handler to process messages from a specific channel
+    application.add_handler(MessageHandler(filters.TEXT & filters.ChatType.CHANNEL, process_channel_message))
 
     application.run_polling()
 
