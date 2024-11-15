@@ -1,38 +1,43 @@
 import os
+from flask import Flask, request, jsonify, send_from_directory
 import requests
-from flask import Flask, request, send_from_directory
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
-from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, MessageHandler, ContextTypes, filters
+from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler, filters
 from requests.auth import HTTPBasicAuth
 
-# Flask App Initialization
+# Flask App
 app = Flask(__name__)
+UPLOAD_FOLDER = 'files'
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-# File storage directory
-FILE_STORAGE_PATH = "file_store"
-os.makedirs(FILE_STORAGE_PATH, exist_ok=True)  # Ensure directory exists
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
 # WordPress REST API configuration
 WORDPRESS_SITE_URL = "https://clawfilezz.in"
 WORDPRESS_USERNAME = "admin"
 WORDPRESS_APP_PASSWORD = "Ehvh Ryr0 WXnI Z61H wdI6 ilVP"
-
-# WordPress REST API endpoint
 POSTS_API_ENDPOINT = f"{WORDPRESS_SITE_URL}/wp-json/wp/v2/posts"
 
-# Telegram Bot Token
-BOT_TOKEN = "8148506170:AAHPk5Su4ADx3pg2iRlbLTVOv7PlnNIDNqo"
+# File Store Routes
+@app.route('/')
+def home():
+    return "File Store and Telegram Bot are running!"
 
-# Initialize Telegram Bot Application
-application = ApplicationBuilder().token(BOT_TOKEN).build()
+@app.route('/upload', methods=['POST'])
+def upload_file():
+    if 'file' not in request.files:
+        return jsonify({"error": "No file provided"}), 400
+    file = request.files['file']
+    file_path = os.path.join(app.config['UPLOAD_FOLDER'], file.filename)
+    file.save(file_path)
+    file_url = f"{request.url_root}files/{file.filename}"
+    return jsonify({"file_url": file_url}), 200
 
-# Route to serve files
-@app.route('/files/<path:filename>', methods=['GET'])
+@app.route('/files/<filename>', methods=['GET'])
 def serve_file(filename):
-    """Serve files stored in the bot's file storage."""
-    return send_from_directory(FILE_STORAGE_PATH, filename)
+    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
-# WordPress Post Functions
+# Telegram Bot Functions
 def list_wordpress_posts():
     response = requests.get(
         POSTS_API_ENDPOINT,
@@ -43,28 +48,8 @@ def list_wordpress_posts():
     else:
         return []
 
-def update_wordpress_post(post_id, content):
-    headers = {"Content-Type": "application/json"}
-    data = {"content": content}
-    response = requests.post(
-        f"{POSTS_API_ENDPOINT}/{post_id}",
-        headers=headers,
-        json=data,
-        auth=HTTPBasicAuth(WORDPRESS_USERNAME, WORDPRESS_APP_PASSWORD)
-    )
-    return response.status_code == 200
-
-# Telegram Handlers
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Welcome! Use /list_posts to see WordPress posts, or upload files to store and generate links.")
-
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "Available Commands:\n"
-        "/list_posts - Manage WordPress posts.\n"
-        "/upload - Upload a file to generate a shareable link.\n"
-        "Interact with posts to add download links, video players, or edit content."
-    )
+    await update.message.reply_text("Welcome! Use /list_posts to manage WordPress posts or upload files via Flask.")
 
 async def list_posts(update: Update, context: ContextTypes.DEFAULT_TYPE):
     posts = list_wordpress_posts()
@@ -96,12 +81,56 @@ async def handle_post_action(update: Update, context: ContextTypes.DEFAULT_TYPE)
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
+async def handle_add_download_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    post_id = query.data.split("_")[1]
+    context.user_data["addlink_post_id"] = post_id
+    context.user_data["awaiting_download_link_title"] = True
+    await query.edit_message_text("Send the title for the download link:")
+
+async def handle_download_link_title(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if context.user_data.get("awaiting_download_link_title"):
+        context.user_data["download_link_title"] = update.message.text
+        context.user_data["awaiting_download_link_title"] = False
+        context.user_data["awaiting_download_link_url"] = True
+        await update.message.reply_text("Send the URL for the download link:")
+    elif context.user_data.get("awaiting_download_link_url"):
+        post_id = context.user_data.get("addlink_post_id")
+        download_link_title = context.user_data.get("download_link_title")
+        download_link_url = update.message.text
+        context.user_data["awaiting_download_link_url"] = False
+
+        # HTML Button Code
+        download_button = f'<a href="{download_link_url}" class="btn btn-primary" target="_blank">{download_link_title}</a>'
+
+        # Fetch the current content of the post
+        post_response = requests.get(
+            f"{POSTS_API_ENDPOINT}/{post_id}",
+            auth=HTTPBasicAuth(WORDPRESS_USERNAME, WORDPRESS_APP_PASSWORD)
+        )
+        if post_response.status_code == 200:
+            post_content = post_response.json().get("content", {}).get("rendered", "")
+            # Append the download button
+            new_content = f"{post_content}<br>{download_button}"
+            success = update_wordpress_post(post_id, new_content)
+            if success:
+                await update.message.reply_text(f"Download link added successfully to Post {post_id}!")
+            else:
+                await update.message.reply_text(f"Failed to add download link to Post {post_id}.")
+        else:
+            await update.message.reply_text("Failed to fetch post content.")
+        # Clear user data
+        context.user_data.clear()
+    else:
+        await update.message.reply_text("Unexpected input. Please use /list_posts to start again.")
+
 async def handle_add_video_player(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     post_id = query.data.split("_")[1]
     context.user_data["addvideo_post_id"] = post_id
-    context.user_data["awaiting_video_url"] = True  # Set state for awaiting video URL
+    context.user_data["awaiting_video_url"] = True
     await query.edit_message_text("Send the source URL for the video file:")
 
 async def handle_video_player_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -151,48 +180,35 @@ async def handle_video_player_input(update: Update, context: ContextTypes.DEFAUL
                 await update.message.reply_text(f"Failed to add video player to Post {post_id}.")
         else:
             await update.message.reply_text("Failed to fetch post content.")
-        # Clear user data after completing the process
+        # Clear user data
         context.user_data.clear()
     else:
         await update.message.reply_text("Unexpected input. Please use /list_posts to start again.")
 
-async def handle_file_upload(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle file uploads and provide a link."""
-    document = update.message.document
-    if document:
-        file_id = document.file_id
-        file = await context.bot.get_file(file_id)
-        file_path = os.path.join(FILE_STORAGE_PATH, document.file_name)
-        
-        # Download and save the file
-        await file.download_to_drive(file_path)
-        
-        # Generate link
-        file_url = f"https://{os.getenv('HEROKU_APP_NAME')}.herokuapp.com/files/{document.file_name}"
-        await update.message.reply_text(f"File uploaded successfully! Access it here: {file_url}")
-    else:
-        await update.message.reply_text("Please upload a valid file.")
+def update_wordpress_post(post_id, content):
+    headers = {"Content-Type": "application/json"}
+    data = {"content": content}
+    response = requests.post(
+        f"{POSTS_API_ENDPOINT}/{post_id}",
+        headers=headers,
+        json=data,
+        auth=HTTPBasicAuth(WORDPRESS_USERNAME, WORDPRESS_APP_PASSWORD)
+    )
+    return response.status_code == 200
 
-# Add Handlers to the Application
-application.add_handler(CommandHandler("start", start))
-application.add_handler(CommandHandler("help", help_command))
-application.add_handler(CommandHandler("list_posts", list_posts))
-application.add_handler(MessageHandler(filters.Document.ALL, handle_file_upload))
-application.add_handler(CallbackQueryHandler(handle_post_action, pattern="^post_\\d+$"))
-application.add_handler(CallbackQueryHandler(handle_add_video_player, pattern="^addvideo_\\d+$"))
-application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_video_player_input))
+# Main Function
+def start_telegram_bot():
+    application = ApplicationBuilder().token("8148506170:AAHPk5Su4ADx3pg2iRlbLTVOv7PlnNIDNqo").build()
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("list_posts", list_posts))
+    application.add_handler(CallbackQueryHandler(handle_post_action, pattern="^post_\\d+$"))
+    application.add_handler(CallbackQueryHandler(handle_add_video_player, pattern="^addvideo_\\d+$"))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_video_player_input))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_download_link_title))
 
-# Flask App for Heroku
-@app.route('/')
-def index():
-    return "Bot is running!"
-
-@app.route('/webhook', methods=['POST'])
-def webhook():
-    """Webhook route for Telegram."""
-    update = Update.de_json(request.get_json(), application.bot)
-    application.update_queue.put_nowait(update)
-    return "OK", 200
+    application.run_polling()
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=True)
+    start_telegram_bot()
