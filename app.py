@@ -4,20 +4,44 @@ from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandle
 from requests.auth import HTTPBasicAuth
 
 # WordPress REST API configuration
-WORDPRESS_SITE_URL = "https://clawfilezz.in"  # Replace with your WordPress site URL
-WORDPRESS_USERNAME = "admin"  # Replace with your WordPress username
-WORDPRESS_APP_PASSWORD = "Ehvh Ryr0 WXnI Z61H wdI6 ilVP"  # Replace with the 24-character application password
+WORDPRESS_SITE_URL = "https://ClawFilezz.in"
+WORDPRESS_USERNAME = "admin"
+WORDPRESS_PASSWORD = "Ehvh Ryr0 WXnI Z61H wdI6 ilV"
 
 # WordPress REST API endpoint for creating posts
 API_ENDPOINT = f"{WORDPRESS_SITE_URL}/wp-json/wp/v2/posts"
 
-# Function to create a WordPress post
-def create_wordpress_post(title, content, status="publish"):
+# TMDB API configuration
+TMDB_API_KEY = "bb5f40c5be4b24660cbdc20c2409835e"
+TMDB_API_URL = "https://api.themoviedb.org/3/search/movie"
+
+# Function to get detailed movie information
+def get_movie_details(movie_name):
+    params = {"api_key": TMDB_API_KEY, "query": movie_name}
+    response = requests.get(TMDB_API_URL, params=params)
+    if response.status_code == 200:
+        results = response.json().get("results", [])
+        return [
+            {
+                "title": movie.get("title"),
+                "release_date": movie.get("release_date", "Unknown Date"),
+                "overview": movie.get("overview", "No overview available."),
+                "poster_path": f"https://image.tmdb.org/t/p/w500{movie.get('poster_path')}" if movie.get('poster_path') else None
+            }
+            for movie in results
+        ]
+    else:
+        return []
+
+# Function to create a WordPress post using REST API
+def create_wordpress_post(title, content, status="publish", categories=[], tags=[]):
     headers = {"Content-Type": "application/json"}
     data = {
         "title": title,
         "content": content,
-        "status": status  # "publish" or "draft"
+        "status": status,
+        "categories": categories,
+        "tags": tags
     }
 
     # Make a POST request to WordPress
@@ -25,28 +49,13 @@ def create_wordpress_post(title, content, status="publish"):
         API_ENDPOINT,
         headers=headers,
         json=data,
-        auth=HTTPBasicAuth(WORDPRESS_USERNAME, WORDPRESS_APP_PASSWORD)
+        auth=HTTPBasicAuth(WORDPRESS_USERNAME, WORDPRESS_PASSWORD)
     )
 
-    if response.status_code == 201:  # HTTP 201 Created
+    if response.status_code == 201:
         return response.json().get("link")
     else:
         return f"Failed to create post: {response.status_code} - {response.text}"
-
-# Function to search for movies using an API (replace this with TMDB or your preferred movie API)
-def get_movie_details(movie_name):
-    TMDB_API_KEY = "bb5f40c5be4b24660cbdc20c2409835e"  # Replace with your TMDB API Key
-    TMDB_API_URL = "https://api.themoviedb.org/3/search/movie"
-    params = {"api_key": TMDB_API_KEY, "query": movie_name}
-    response = requests.get(TMDB_API_URL, params=params)
-    if response.status_code == 200:
-        results = response.json().get("results", [])
-        return [
-            {"title": movie.get("title"), "release_date": movie.get("release_date", "Unknown Date")}
-            for movie in results
-        ]
-    else:
-        return []
 
 # Telegram Bot Handlers
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -76,8 +85,15 @@ async def handle_movie_selection(update: Update, context: ContextTypes.DEFAULT_T
     if 0 <= selected_index < len(movies):
         selected_movie = movies[selected_index]
         title = selected_movie["title"]
-        content = f"<h2>{title}</h2><p>Release Date: {selected_movie['release_date']}</p>"
-        post_url = create_wordpress_post(title, content)
+        poster_url = selected_movie["poster_path"]
+        overview = selected_movie["overview"]
+        content = f"<h2>{title}</h2><p><strong>Release Date:</strong> {selected_movie['release_date']}</p><p>{overview}</p>"
+        if poster_url:
+            content += f'<p><img src="{poster_url}" alt="{title} poster"></p>'
+        
+        # Create post with additional details and custom status
+        post_url = create_wordpress_post(title, content, status="publish", categories=[1], tags=[1])
+        
         if "http" in post_url:
             await query.edit_message_text(f"Post successfully created: {post_url}")
         else:
@@ -87,7 +103,7 @@ async def handle_movie_selection(update: Update, context: ContextTypes.DEFAULT_T
 
 # Main Function
 def main():
-    application = ApplicationBuilder().token("8148506170:AAHPk5Su4ADx3pg2iRlbLTVOv7PlnNIDNqo").build()  # Replace with your bot token
+    application = ApplicationBuilder().token("8148506170:AAHPk5Su4ADx3pg2iRlbLTVOv7PlnNIDNqo").build()
     application.add_handler(CommandHandler("start", start))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_movie_search))
     application.add_handler(CallbackQueryHandler(handle_movie_selection))
