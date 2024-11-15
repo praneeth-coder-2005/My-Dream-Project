@@ -1,9 +1,9 @@
 import requests
 from requests.auth import HTTPBasicAuth
 
-WORDPRESS_SITE_URL = "https://yourwordpresssite.com"
+WORDPRESS_SITE_URL = "https://clawfilezz.in"
 USERNAME = "admin"
-PASSWORD = "application_password"
+PASSWORD = "Ehvh Ryr0 WXnI Z61H wdI6 ilVP"
 
 POSTS_API = f"{WORDPRESS_SITE_URL}/wp-json/wp/v2/posts"
 
