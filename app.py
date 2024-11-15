@@ -117,16 +117,17 @@ def post_to_blogger(blogger_service, title, description, download_link):
 # Set up webhook for receiving messages
 async def setup_webhook():
     application = Application.builder().token(bot_token).build()
-    
+
     # Set up the webhook (replace with your actual URL)
     webhook_url = 'https://your-app.herokuapp.com/webhook'  # Set your webhook URL here
     await application.bot.set_webhook(url=webhook_url)
-    
+
     # Add handlers
     application.add_handler(CommandHandler('start', start))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_movie_search))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, select_movie))
 
+    # Run the bot
     await application.run_polling()
 
 # Main function to start the bot with graceful shutdown
