@@ -8,25 +8,18 @@ WORDPRESS_SITE_URL = "https://clawfilezz.in"
 WORDPRESS_USERNAME = "admin"
 WORDPRESS_APP_PASSWORD = "Ehvh Ryr0 WXnI Z61H wdI6 ilVP"
 
-# TMDB API configuration
-TMDB_API_KEY = "bb5f40c5be4b24660cbdc20c2409835e"
-TMDB_API_URL = "https://api.themoviedb.org/3/search/movie"
-
 # WordPress REST API endpoint
 POSTS_API_ENDPOINT = f"{WORDPRESS_SITE_URL}/wp-json/wp/v2/posts"
 
-# Function to fetch WordPress posts
+# Function to list posts from WordPress
 def list_wordpress_posts():
-    try:
-        response = requests.get(
-            POSTS_API_ENDPOINT,
-            auth=HTTPBasicAuth(WORDPRESS_USERNAME, WORDPRESS_APP_PASSWORD)
-        )
-        if response.status_code == 200:
-            return response.json()
-        else:
-            return []
-    except Exception as e:
+    response = requests.get(
+        POSTS_API_ENDPOINT,
+        auth=HTTPBasicAuth(WORDPRESS_USERNAME, WORDPRESS_APP_PASSWORD)
+    )
+    if response.status_code == 200:
+        return response.json()
+    else:
         return []
 
 # Function to update a WordPress post
@@ -41,42 +34,17 @@ def update_wordpress_post(post_id, content):
     )
     return response.status_code == 200
 
-# Function to fetch movie details from TMDB
-def get_movie_details_tmdb(movie_name):
-    params = {"api_key": TMDB_API_KEY, "query": movie_name}
-    try:
-        response = requests.get(TMDB_API_URL, params=params)
-        if response.status_code == 200:
-            results = response.json().get("results", [])
-            return [
-                {
-                    "title": movie.get("title"),
-                    "release_date": movie.get("release_date", "Unknown Date"),
-                    "overview": movie.get("overview", "No overview available."),
-                    "popularity": movie.get("popularity"),
-                    "vote_average": movie.get("vote_average"),
-                    "poster_path": f"https://image.tmdb.org/t/p/w500{movie.get('poster_path')}" if movie.get("poster_path") else None
-                }
-                for movie in results
-            ]
-        else:
-            return []
-    except Exception as e:
-        return []
-
 # Telegram Bot Handlers
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Welcome! Send a movie name directly to fetch details or use /list_posts to manage WordPress posts.")
+    await update.message.reply_text("Welcome! Use /list_posts to see available posts or type /help for guidance.")
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "Commands:\n"
-        "/list_posts - List WordPress posts.\n"
-        "Send a movie name directly to fetch details and post to WordPress.\n"
-        "Manage posts to add video players or download links."
+        "Available Commands:\n"
+        "/list_posts - List all posts on your WordPress site.\n"
+        "Interact with posts to edit, delete, or add links and video players."
     )
 
-# List WordPress posts
 async def list_posts(update: Update, context: ContextTypes.DEFAULT_TYPE):
     posts = list_wordpress_posts()
     if posts:
@@ -91,55 +59,22 @@ async def list_posts(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("No posts found.")
 
-# Handle movie search and fetch details
-async def handle_movie_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    movie_name = update.message.text
-    movies = get_movie_details_tmdb(movie_name)
-    if movies:
-        keyboard = [
-            [InlineKeyboardButton(f"{movie['title']} ({movie['release_date']})", callback_data=str(i))]
-            for i, movie in enumerate(movies[:10])
-        ]
-        context.user_data["movies"] = movies
-        await update.message.reply_text(
-            f"Movies found for '{movie_name}': Select one to post to WordPress.",
-            reply_markup=InlineKeyboardMarkup(keyboard)
-        )
-    else:
-        await update.message.reply_text("No movies found.")
-
-async def handle_movie_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def handle_post_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    selected_index = int(query.data)
-    movies = context.user_data.get("movies", [])
-    if 0 <= selected_index < len(movies):
-        selected_movie = movies[selected_index]
-        title = selected_movie["title"]
-        content = (
-            f"<h2>{title}</h2>"
-            f"<p>Release Date: {selected_movie['release_date']}</p>"
-            f"<p>Overview: {selected_movie['overview']}</p>"
-            f"<p>Popularity: {selected_movie['popularity']}</p>"
-            f"<p>Vote Average: {selected_movie['vote_average']}</p>"
-        )
-        # Post to WordPress
-        data = {"title": title, "content": content, "status": "publish"}
-        response = requests.post(
-            POSTS_API_ENDPOINT,
-            headers={"Content-Type": "application/json"},
-            json=data,
-            auth=HTTPBasicAuth(WORDPRESS_USERNAME, WORDPRESS_APP_PASSWORD)
-        )
-        if response.status_code == 201:
-            post_link = response.json().get("link")
-            await query.edit_message_text(f"Post created: {post_link}")
-        else:
-            await query.edit_message_text("Failed to post to WordPress.")
-    else:
-        await query.edit_message_text("Invalid selection.")
+    post_id = query.data.split("_")[1]
 
-# Add Video Player
+    keyboard = [
+        [InlineKeyboardButton("Edit Post", callback_data=f"edit_{post_id}")],
+        [InlineKeyboardButton("Delete Post", callback_data=f"delete_{post_id}")],
+        [InlineKeyboardButton("Add Download Link", callback_data=f"addlink_{post_id}")],
+        [InlineKeyboardButton("Add Video Player", callback_data=f"addvideo_{post_id}")]
+    ]
+    await query.edit_message_text(
+        f"What would you like to do with Post ID {post_id}?",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
 async def handle_add_video_player(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -154,11 +89,12 @@ async def handle_video_player_input(update: Update, context: ContextTypes.DEFAUL
         video_url = update.message.text
         context.user_data["awaiting_video_url"] = False
 
-        # JWPlayer code
+        # JWPlayer code with the provided source URL
         video_player_code = f"""
         <script src="//content.jwplatform.com/libraries/IDzF9Zmk.js"></script>
         <div id="my-video1"></div>
         <script>
+        // <![CDATA[
         jwplayer('my-video1').setup({{
           "playlist": [
             {{
@@ -176,15 +112,18 @@ async def handle_video_player_input(update: Update, context: ContextTypes.DEFAUL
           "hlshtml": true,
           "autostart": false
         }});
+        // ]]>
         </script>
         """
 
+        # Fetch the current content of the post
         post_response = requests.get(
             f"{POSTS_API_ENDPOINT}/{post_id}",
             auth=HTTPBasicAuth(WORDPRESS_USERNAME, WORDPRESS_APP_PASSWORD)
         )
         if post_response.status_code == 200:
             post_content = post_response.json().get("content", {}).get("rendered", "")
+            # Append the video player code
             new_content = f"{post_content}<br>{video_player_code}"
             success = update_wordpress_post(post_id, new_content)
             if success:
@@ -193,7 +132,10 @@ async def handle_video_player_input(update: Update, context: ContextTypes.DEFAUL
                 await update.message.reply_text(f"Failed to add video player to Post {post_id}.")
         else:
             await update.message.reply_text("Failed to fetch post content.")
+        # Clear user data after completing the process
         context.user_data.clear()
+    else:
+        await update.message.reply_text("Unexpected input. Please use /list_posts to start again.")
 
 # Main Function
 def main():
@@ -201,8 +143,7 @@ def main():
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("list_posts", list_posts))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_movie_search))
-    application.add_handler(CallbackQueryHandler(handle_movie_selection, pattern="^\d+$"))
+    application.add_handler(CallbackQueryHandler(handle_post_action, pattern="^post_\\d+$"))
     application.add_handler(CallbackQueryHandler(handle_add_video_player, pattern="^addvideo_\\d+$"))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_video_player_input))
 
