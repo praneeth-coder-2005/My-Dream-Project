@@ -33,9 +33,20 @@ blogger_service = None
 async def start(update: Update, context: CallbackContext) -> None:
     await update.message.reply_text("Welcome! Send me the name of a movie to get started.")
 
-# Handle movie search
-async def handle_movie_search(update: Update, context: CallbackContext) -> None:
-    movie_name = update.message.text.strip()
+# Handle movie search and selection
+async def handle_movie_request(update: Update, context: CallbackContext) -> None:
+    user_input = update.message.text.strip()
+
+    # Check if the user provided a number and has a movie list stored
+    if user_input.isdigit() and "movies" in context.user_data:
+        # Treat this as a selection from the list
+        await select_movie(update, context, int(user_input))
+    else:
+        # Treat this as a movie search request
+        await search_movies(update, context, user_input)
+
+# Search for movies and display options
+async def search_movies(update: Update, context: CallbackContext, movie_name: str) -> None:
     movies = get_movie_details(movie_name)
 
     if movies:
@@ -44,32 +55,31 @@ async def handle_movie_search(update: Update, context: CallbackContext) -> None:
             release_date = movie.get("release_date", "Unknown")
             reply_text += f"{i+1}. {movie['title']} ({release_date})\n"
         await update.message.reply_text(reply_text)
-        context.user_data["movies"] = movies
+        context.user_data["movies"] = movies  # Save movies for selection
     else:
         await update.message.reply_text(f"No movies found with the title '{movie_name}'.")
 
 # Handle movie selection
-async def select_movie(update: Update, context: CallbackContext) -> None:
-    try:
-        selected_index = int(update.message.text) - 1
-        movies = context.user_data.get("movies", [])
-        if 0 <= selected_index < len(movies):
-            selected_movie = movies[selected_index]
-            title = selected_movie["title"]
-            description = selected_movie.get("overview", "No description available.")
-            download_link = "http://example.com/download_link"  # Placeholder
+async def select_movie(update: Update, context: CallbackContext, selected_index: int) -> None:
+    movies = context.user_data.get("movies", [])
 
-            # Post to Blogger
-            global blogger_service
-            if blogger_service is None:
-                blogger_service = authenticate_blogger()
-            post_to_blogger(blogger_service, title, description, download_link)
+    # Validate selection
+    if 0 <= selected_index - 1 < len(movies):
+        selected_movie = movies[selected_index - 1]
+        title = selected_movie["title"]
+        description = selected_movie.get("overview", "No description available.")
+        download_link = "http://example.com/download_link"  # Placeholder
 
-            await update.message.reply_text(f"Movie '{title}' has been posted to your blog!")
-        else:
-            await update.message.reply_text("Invalid movie number. Please try again.")
-    except ValueError:
-        await update.message.reply_text("Please reply with a valid movie number.")
+        # Post to Blogger
+        global blogger_service
+        if blogger_service is None:
+            blogger_service = authenticate_blogger()
+        post_to_blogger(blogger_service, title, description, download_link)
+
+        await update.message.reply_text(f"Movie '{title}' has been posted to your blog!")
+        context.user_data.pop("movies", None)  # Clear movie list after selection
+    else:
+        await update.message.reply_text("Invalid movie number. Please try again.")
 
 # Authenticate Google Blogger
 def authenticate_blogger():
@@ -118,8 +128,7 @@ def main():
 
     # Add command handlers
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_movie_search))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, select_movie))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_movie_request))
 
     # Run the bot
     application.run_polling()
