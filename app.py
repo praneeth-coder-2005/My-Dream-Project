@@ -207,8 +207,10 @@ def start_telegram_bot():
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_download_link_title))
 
     application.run_polling()
-
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
-app.run(host="0.0.0.0", port=port, debug=False)
-    start_telegram_bot()
+    app.run(host="0.0.0.0", port=port, debug=False)
+
+    # Start the Telegram bot
+    start_telegram_bot()  # Ensure this line is at the correct indentation level
+
