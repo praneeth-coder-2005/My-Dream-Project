@@ -12,13 +12,8 @@ WORDPRESS_APP_PASSWORD = "Ehvh Ryr0 WXnI Z61H wdI6 ilVP"
 TMDB_API_KEY = "bb5f40c5be4b24660cbdc20c2409835e"
 TMDB_API_URL = "https://api.themoviedb.org/3/search/movie"
 
-# Telegram bot token and channel ID
-BOT_TOKEN = "8148506170:AAHPk5Su4ADx3pg2iRlbLTVOv7PlnNIDNqo"
-CHANNEL_ID = -1002260555414
-
 # WordPress REST API endpoint
 POSTS_API_ENDPOINT = f"{WORDPRESS_SITE_URL}/wp-json/wp/v2/posts"
-MEDIA_API_ENDPOINT = f"{WORDPRESS_SITE_URL}/wp-json/wp/v2/media"
 
 # Function to fetch movie details from TMDB
 def get_movie_details_tmdb(movie_name):
@@ -27,128 +22,117 @@ def get_movie_details_tmdb(movie_name):
         response = requests.get(TMDB_API_URL, params=params)
         if response.status_code == 200:
             results = response.json().get("results", [])
-            if results:
-                movie = results[0]
-                return {
+            return [
+                {
                     "title": movie.get("title"),
                     "release_date": movie.get("release_date", "Unknown Date"),
                     "overview": movie.get("overview", "No overview available."),
+                    "popularity": movie.get("popularity"),
+                    "vote_average": movie.get("vote_average"),
                     "poster_path": f"https://image.tmdb.org/t/p/w500{movie.get('poster_path')}" if movie.get("poster_path") else None
                 }
-        return None
+                for movie in results
+            ]
+        else:
+            return []
     except Exception as e:
-        return None
+        return []
 
-# Function to upload a featured image to WordPress
-def upload_image_to_wordpress(image_url):
-    try:
-        if image_url:
-            image_data = requests.get(image_url).content
-            headers = {
-                "Content-Disposition": f"attachment; filename=featured_image.jpg",
-                "Content-Type": "image/jpeg"
-            }
-            response = requests.post(
-                MEDIA_API_ENDPOINT,
-                headers=headers,
-                data=image_data,
-                auth=HTTPBasicAuth(WORDPRESS_USERNAME, WORDPRESS_APP_PASSWORD)
-            )
-            if response.status_code == 201:
-                return response.json().get("id")  # Return the media ID
-    except Exception as e:
-        pass
-    return None
-
-# Function to create or update WordPress posts
-def create_or_update_wordpress_post(title, content, download_links=None, poster_id=None, video_player_code=None):
+# Function to update a WordPress post
+def update_wordpress_post(post_id, content):
     headers = {"Content-Type": "application/json"}
+    data = {"content": content}
+    response = requests.post(
+        f"{POSTS_API_ENDPOINT}/{post_id}",
+        headers=headers,
+        json=data,
+        auth=HTTPBasicAuth(WORDPRESS_USERNAME, WORDPRESS_APP_PASSWORD)
+    )
+    return response.status_code == 200
 
-    # Check if post exists
-    response = requests.get(POSTS_API_ENDPOINT, params={"search": title}, auth=HTTPBasicAuth(WORDPRESS_USERNAME, WORDPRESS_APP_PASSWORD))
-    existing_posts = response.json()
+# Telegram Bot Handlers
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Welcome! Use /list_posts, /search <movie>, or /help for guidance.")
 
-    if existing_posts:
-        post_id = existing_posts[0]["id"]
-        current_content = existing_posts[0]["content"]["rendered"]
-        for link in download_links or []:
-            current_content += f'<br><a href="{link["url"]}">{link["title"]}</a>'
-        if video_player_code:
-            current_content += f"<br>{video_player_code}"
-        update_data = {"content": current_content}
-        requests.post(f"{POSTS_API_ENDPOINT}/{post_id}", headers=headers, json=update_data, auth=HTTPBasicAuth(WORDPRESS_USERNAME, WORDPRESS_APP_PASSWORD))
-        return existing_posts[0]["link"]
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "Commands:\n"
+        "/list_posts - List WordPress posts.\n"
+        "/search <movie> - Search for a movie and post to WordPress.\n"
+        "Manage posts to add video players or download links."
+    )
 
+# Feature: Movie Search and Post to WordPress
+async def search_movie(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if len(context.args) == 0:
+        await update.message.reply_text("Provide a movie name. Example: /search Inception")
+        return
+
+    movie_name = " ".join(context.args)
+    movies = get_movie_details_tmdb(movie_name)
+    if movies:
+        keyboard = [
+            [InlineKeyboardButton(f"{movie['title']} ({movie['release_date']})", callback_data=str(i))]
+            for i, movie in enumerate(movies[:10])
+        ]
+        context.user_data["movies"] = movies
+        await update.message.reply_text(
+            f"Movies found for '{movie_name}': Select one to post to WordPress.",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
     else:
-        data = {
-            "title": title,
-            "content": content,
-            "status": "publish"
-        }
-        if poster_id:
-            data["featured_media"] = poster_id
+        await update.message.reply_text("No movies found.")
 
-        if download_links:
-            for link in download_links:
-                data["content"] += f'<br><a href="{link["url"]}">{link["title"]}</a>'
-        if video_player_code:
-            data["content"] += f"<br>{video_player_code}"
-
+async def handle_movie_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    selected_index = int(query.data)
+    movies = context.user_data.get("movies", [])
+    if 0 <= selected_index < len(movies):
+        selected_movie = movies[selected_index]
+        title = selected_movie["title"]
+        content = (
+            f"<h2>{title}</h2>"
+            f"<p>Release Date: {selected_movie['release_date']}</p>"
+            f"<p>Overview: {selected_movie['overview']}</p>"
+            f"<p>Popularity: {selected_movie['popularity']}</p>"
+            f"<p>Vote Average: {selected_movie['vote_average']}</p>"
+        )
+        # Post to WordPress
+        data = {"title": title, "content": content, "status": "publish"}
         response = requests.post(
             POSTS_API_ENDPOINT,
-            headers=headers,
+            headers={"Content-Type": "application/json"},
             json=data,
             auth=HTTPBasicAuth(WORDPRESS_USERNAME, WORDPRESS_APP_PASSWORD)
         )
         if response.status_code == 201:
-            return response.json().get("link")
-    return None
+            post_link = response.json().get("link")
+            await query.edit_message_text(f"Post created: {post_link}")
+        else:
+            await query.edit_message_text("Failed to post to WordPress.")
+    else:
+        await query.edit_message_text("Invalid selection.")
 
-# Telegram bot handlers
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Welcome to the WordPress automation bot!")
+# Feature: Add Video Player
+async def handle_add_video_player(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    post_id = query.data.split("_")[1]
+    context.user_data["addvideo_post_id"] = post_id
+    context.user_data["awaiting_video_url"] = True
+    await query.edit_message_text("Send the video source URL:")
 
-async def process_channel_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.channel_post and update.channel_post.chat.id == CHANNEL_ID:
-        message_text = update.channel_post.text
-        if not message_text:
-            await update.channel_post.reply_text("No valid content found in the message.")
-            return
+async def handle_video_player_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if context.user_data.get("awaiting_video_url"):
+        post_id = context.user_data.get("addvideo_post_id")
+        video_url = update.message.text
+        context.user_data["awaiting_video_url"] = False
 
-        # Extract movie name and links
-        lines = message_text.splitlines()
-        movie_name = None
-        download_links = []
-
-        for line in lines:
-            if line.startswith("📂 Fɪʟᴇ ɴᴀᴍᴇ :"):
-                movie_name = line.split(":", 1)[1].strip()
-            elif line.startswith("📥 Dᴏᴡɴʟᴏᴀᴅ :"):
-                download_links.append({"title": "Download Link", "url": line.split(":", 1)[1].strip()})
-
-        if not movie_name or not download_links:
-            await update.channel_post.reply_text("Could not extract movie details or download links.")
-            return
-
-        # Fetch movie details from TMDB
-        movie_details = get_movie_details_tmdb(movie_name)
-        if not movie_details:
-            await update.channel_post.reply_text(f"Could not find movie '{movie_name}' on TMDB.")
-            return
-
-        # Prepare post content
-        content = (
-            f"<h2>{movie_details['title']}</h2>"
-            f"<p>Release Date: {movie_details['release_date']}</p>"
-            f"<p>Overview: {movie_details['overview']}</p>"
-        )
-
-        # Video player code
-        video_player_code = f"""
+        video_code = f"""
         <script src="//content.jwplatform.com/libraries/IDzF9Zmk.js"></script>
         <div id="my-video1"></div>
         <script>
-        // <![CDATA[
         jwplayer('my-video1').setup({{
           "playlist": [
             {{
@@ -156,7 +140,7 @@ async def process_channel_message(update: Update, context: ContextTypes.DEFAULT_
                 {{
                   "default": true,
                   "type": "mp4",
-                  "file": "{download_links[0]['url']}",
+                  "file": "{video_url}",
                   "label": "HD"
                 }}
               ]
@@ -166,24 +150,61 @@ async def process_channel_message(update: Update, context: ContextTypes.DEFAULT_
           "hlshtml": true,
           "autostart": false
         }});
-        // ]]>
         </script>
         """
+        # Append to WordPress
+        response = requests.get(
+            f"{POSTS_API_ENDPOINT}/{post_id}",
+            auth=HTTPBasicAuth(WORDPRESS_USERNAME, WORDPRESS_APP_PASSWORD)
+        )
+        if response.status_code == 200:
+            post_content = response.json().get("content", {}).get("rendered", "")
+            new_content = f"{post_content}<br>{video_code}"
+            success = update_wordpress_post(post_id, new_content)
+            if success:
+                await update.message.reply_text(f"Video player added to Post {post_id}!")
+            else:
+                await update.message.reply_text("Failed to update post.")
+        context.user_data.clear()
 
-        # Upload poster and create/update post
-        poster_id = upload_image_to_wordpress(movie_details["poster_path"])
-        post_url = create_or_update_wordpress_post(movie_details["title"], content, download_links, poster_id, video_player_code)
+# Feature: Add Download Link
+async def handle_add_download_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    post_id = query.data.split("_")[1]
+    context.user_data["addlink_post_id"] = post_id
+    await query.edit_message_text("Send the download link:")
 
-        if post_url:
-            await update.channel_post.reply_text(f"Movie '{movie_details['title']}' uploaded successfully: {post_url}")
+async def handle_download_link_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    post_id = context.user_data.get("addlink_post_id")
+    download_link = update.message.text
+
+    # Append download link to post
+    response = requests.get(
+        f"{POSTS_API_ENDPOINT}/{post_id}",
+        auth=HTTPBasicAuth(WORDPRESS_USERNAME, WORDPRESS_APP_PASSWORD)
+    )
+    if response.status_code == 200:
+        post_content = response.json().get("content", {}).get("rendered", "")
+        new_content = f"{post_content}<br><a href='{download_link}'>Download</a>"
+        success = update_wordpress_post(post_id, new_content)
+        if success:
+            await update.message.reply_text(f"Download link added to Post {post_id}!")
         else:
-            await update.channel_post.reply_text(f"Failed to upload movie '{movie_details['title']}'.")
+            await update.message.reply_text("Failed to update post.")
+    context.user_data.clear()
 
-# Main function
+# Main Function
 def main():
-    application = ApplicationBuilder().token(BOT_TOKEN).build()
+    application = ApplicationBuilder().token("8148506170:AAHPk5Su4ADx3pg2iRlbLTVOv7PlnNIDNqo").build()
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(MessageHandler(filters.ALL, process_channel_message))
+    application.add_handler(CommandHandler("help", help_command))
+    application.add_handler(CommandHandler("search", search_movie))
+    application.add_handler(CallbackQueryHandler(handle_movie_selection, pattern="^\d+$"))
+    application.add_handler(CallbackQueryHandler(handle_add_video_player, pattern="^addvideo_\\d+$"))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_video_player_input))
+    application.add_handler(CallbackQueryHandler(handle_add_download_link, pattern="^addlink_\\d+$"))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_download_link_input))
 
     application.run_polling()
 
