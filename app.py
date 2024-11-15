@@ -1,5 +1,6 @@
 import os
 import logging
+import asyncio
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackContext, filters
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -128,6 +129,15 @@ async def setup_webhook():
 
     await application.run_polling()
 
+# Main function to start the bot with graceful shutdown
+async def main():
+    await setup_webhook()
+
 if __name__ == '__main__':
-    import asyncio
-    asyncio.run(setup_webhook())
+    try:
+        asyncio.run(main())  # Run the bot with asyncio
+    except (KeyboardInterrupt, SystemExit):
+        logger.info("Bot stopped")
+        # Graceful shutdown process to avoid the "Cannot close a running event loop" error
+        loop = asyncio.get_event_loop()
+        loop.stop()
