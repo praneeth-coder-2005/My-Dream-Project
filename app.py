@@ -1,19 +1,20 @@
 import os
 import logging
 import requests
-from telegram import Update, Bot
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+from telegram import Update
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 
 # Logging setup
 logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
 # Blogger setup
+BLOGGER_BLOG_ID = "2426657398890190336"  # Fixed blog ID
+
 def authenticate_blogger():
     credentials_json = os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON")
     if not credentials_json:
@@ -23,13 +24,12 @@ def authenticate_blogger():
 
 def create_blogger_post(title, content):
     service = authenticate_blogger()
-    blog_id = "YOUR_BLOGGER_BLOG_ID"  # Replace with your Blogger blog ID
     post_body = {
         "title": title,
         "content": content,
         "labels": ["Movies", "Telegram Bot"]
     }
-    service.posts().insert(blogId=blog_id, body=post_body, isDraft=False).execute()
+    service.posts().insert(blogId=BLOGGER_BLOG_ID, body=post_body, isDraft=False).execute()
     logger.info(f"Posted to Blogger: {title}")
 
 # Movie API integration
@@ -51,27 +51,34 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Hello! Send a movie name to get its details.")
 
 async def handle_movie_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    movie_name = update.message.text
+    movie_name = update.message.text.strip()
+    if not movie_name:
+        await update.message.reply_text("Please provide a valid movie name.")
+        return
+
     movies = get_movie_details(movie_name)
     if not movies:
         await update.message.reply_text("No movies found. Try another name.")
         return
-    
-    response_text = "Found movies:\n"
+
+    response_text = f"Found movies for '{movie_name}':\n"
     for i, movie in enumerate(movies[:10], start=1):
         title = movie.get("title", "N/A")
         release_date = movie.get("release_date", "Unknown")
         response_text += f"{i}. {title} ({release_date})\n"
     response_text += "Please reply with the movie number to post to Blogger."
 
-    # Store movies in context for selection
+    # Store movies and movie name in context
     context.user_data["movies"] = movies
+    context.user_data["search_query"] = movie_name
     await update.message.reply_text(response_text)
 
 async def handle_movie_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         selection = int(update.message.text) - 1
         movies = context.user_data.get("movies", [])
+        search_query = context.user_data.get("search_query", "Unknown Movie")
+
         if selection < 0 or selection >= len(movies):
             await update.message.reply_text("Invalid selection. Try again.")
             return
@@ -89,7 +96,7 @@ async def handle_movie_selection(update: Update, context: ContextTypes.DEFAULT_T
             content += f'<img src="{poster_url}" alt="{title} poster"/>'
         create_blogger_post(title, content)
 
-        await update.message.reply_text(f"Posted to Blogger: {title}")
+        await update.message.reply_text(f"Posted to Blogger: {title}\nMovie name searched: {search_query}")
     except ValueError:
         await update.message.reply_text("Please enter a valid number.")
     except Exception as e:
@@ -105,8 +112,8 @@ def main():
     app = ApplicationBuilder().token(token).build()
 
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("movie", handle_movie_search))
-    app.add_handler(CommandHandler("select", handle_movie_selection))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_movie_search))
+    app.add_handler(MessageHandler(filters.Regex(r"^\d+$"), handle_movie_selection))
 
     app.run_polling()
 
