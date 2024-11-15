@@ -21,7 +21,6 @@ TMDB_API_KEY = os.getenv('TMDB_API_KEY')
 BLOG_ID = os.getenv('BLOG_ID')
 CLIENT_ID = os.getenv('CLIENT_ID')
 CLIENT_SECRET = os.getenv('CLIENT_SECRET')
-REDIRECT_URI = os.getenv('REDIRECT_URI', 'http://localhost:8080/oauth2callback')
 
 TMDB_BASE_URL = 'https://api.themoviedb.org/3/search/movie'
 
@@ -81,8 +80,7 @@ def authenticate_blogger():
             "client_secret": CLIENT_SECRET,
             "auth_uri": "https://accounts.google.com/o/oauth2/auth",
             "token_uri": "https://oauth2.googleapis.com/token",
-            "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-            "redirect_uris": [REDIRECT_URI]
+            "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs"
         }
     }
     
