@@ -134,9 +134,7 @@ async def main():
     await setup_webhook()
 
 if __name__ == '__main__':
-    # Directly call the main function which uses the built-in event loop handling of python-telegram-bot
+    # Directly run the bot using the Application class's polling system
     import asyncio
-    try:
-        asyncio.run(main())  # Run the bot with asyncio
-    except (KeyboardInterrupt, SystemExit):
-        logger.info("Bot stopped")
+    application = Application.builder().token(bot_token).build()
+    application.run_polling()  # This will handle the event loop
