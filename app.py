@@ -36,14 +36,16 @@ def post_to_wordpress(title, content):
     
     if response.status_code == 201:
         print("Post created successfully:", response.json().get("link"))
+        return response.json().get("link")
     else:
         print("Failed to create post:", response.json())
+        return None
 
 # Command handler for /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Welcome! Type the name of a movie to search for its details.")
 
-# Function to handle movie search and selection
+# Function to handle movie search
 async def handle_movie_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.message.text
     movies = get_movie_details(query)
@@ -57,10 +59,16 @@ async def handle_movie_search(update: Update, context: ContextTypes.DEFAULT_TYPE
     reply_text = f"Found movies for '{query}':\n" + "\n".join([f"{i+1}. {movie['title']} ({movie['release_date']})" for i, movie in enumerate(movies)])
     reply_text += "\nPlease reply with the movie number to post to WordPress."
     
+    # Save search state
+    context.user_data['search_active'] = True
     await update.message.reply_text(reply_text)
 
 # Function to handle movie selection
 async def handle_movie_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.user_data.get('search_active'):
+        await update.message.reply_text("Please start by searching for a movie first.")
+        return
+
     try:
         choice = int(update.message.text) - 1
         movies = context.user_data.get('movies', [])
@@ -70,8 +78,14 @@ async def handle_movie_selection(update: Update, context: ContextTypes.DEFAULT_T
             title = selected_movie['title']
             content = f"<p><strong>Title:</strong> {selected_movie['title']}</p><p><strong>Release Date:</strong> {selected_movie['release_date']}</p><p><strong>Description:</strong> {selected_movie['overview']}</p>"
             
-            post_to_wordpress(title, content)
-            await update.message.reply_text(f"Posted '{title}' to WordPress.")
+            link = post_to_wordpress(title, content)
+            if link:
+                await update.message.reply_text(f"Posted '{title}' to WordPress. View it here: {link}")
+            else:
+                await update.message.reply_text("An error occurred while posting to WordPress.")
+            
+            # Reset search state
+            context.user_data['search_active'] = False
         else:
             await update.message.reply_text("Please enter a valid movie number.")
     except ValueError:
