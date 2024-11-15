@@ -73,27 +73,6 @@ async def handle_post_action(update: Update, context: ContextTypes.DEFAULT_TYPE)
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
-async def handle_post_edit(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    post_id = query.data.split("_")[1]
-    context.user_data["edit_post_id"] = post_id
-
-    await query.edit_message_text("Send the updated content for this post:")
-
-async def handle_new_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    post_id = context.user_data.get("edit_post_id")
-    if post_id:
-        updated_content = update.message.text
-        success = update_wordpress_post(post_id, updated_content)
-        if success:
-            await update.message.reply_text(f"Post {post_id} updated successfully!")
-        else:
-            await update.message.reply_text(f"Failed to update Post {post_id}.")
-        context.user_data.pop("edit_post_id", None)
-    else:
-        await update.message.reply_text("No post is being edited currently.")
-
 async def handle_add_download_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -106,8 +85,6 @@ async def handle_download_link_title(update: Update, context: ContextTypes.DEFAU
     if post_id:
         context.user_data["download_link_title"] = update.message.text
         await update.message.reply_text("Send the URL for the download link:")
-    else:
-        await update.message.reply_text("No post selected for adding a download link.")
 
 async def handle_download_link_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
     post_id = context.user_data.get("addlink_post_id")
@@ -130,7 +107,7 @@ async def handle_download_link_url(update: Update, context: ContextTypes.DEFAULT
                 await update.message.reply_text(f"Failed to add download link to Post {post_id}.")
         else:
             await update.message.reply_text("Failed to fetch post content.")
-        # Clean up user data
+        # Clear user data after completing the process
         context.user_data.pop("addlink_post_id", None)
         context.user_data.pop("download_link_title", None)
     else:
@@ -142,10 +119,8 @@ def main():
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("list_posts", list_posts))
     application.add_handler(CallbackQueryHandler(handle_post_action, pattern="^post_"))
-    application.add_handler(CallbackQueryHandler(handle_post_edit, pattern="^edit_"))
-    application.add_handler(CallbackQueryHandler(handle_post_action, pattern="^delete_"))
     application.add_handler(CallbackQueryHandler(handle_add_download_link, pattern="^addlink_"))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_download_link_title, filters.FORWARDED))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_download_link_title))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_download_link_url))
 
     application.run_polling()
