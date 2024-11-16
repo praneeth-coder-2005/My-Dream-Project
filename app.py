@@ -218,4 +218,15 @@ def main():
     application.add_handler(CommandHandler("list_posts", list_posts))
     application.add_handler(CallbackQueryHandler(handle_post_action, pattern="^post_\\d+$"))
     application.add_handler(CallbackQueryHandler(handle_edit_post, pattern="^edit_\\d+$"))
-    application.add_handler(CallbackQueryHandler
+    application.add_handler(CallbackQueryHandler(handle_delete_post, pattern="^delete_\\d+$"))
+    application.add_handler(CallbackQueryHandler(handle_add_download_link, pattern="^addlink_\\d+$"))
+    application.add_handler(CallbackQueryHandler(handle_add_video_player, pattern="^addvideo_\\d+$"))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_edit_content_input))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_download_link_name_input))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_download_link_url_input))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_video_player_input))
+
+    application.run_polling()
+
+if __name__ == "__main__":
+    main()
