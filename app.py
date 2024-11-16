@@ -69,6 +69,7 @@ async def handle_post_action(update: Update, context: ContextTypes.DEFAULT_TYPE)
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
+# Edit Post Feature
 async def handle_edit_post(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -90,6 +91,7 @@ async def handle_edit_content_input(update: Update, context: ContextTypes.DEFAUL
             await update.message.reply_text(f"Failed to update Post {post_id}.")
         context.user_data.clear()
 
+# Delete Post Feature
 async def handle_delete_post(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -101,7 +103,7 @@ async def handle_delete_post(update: Update, context: ContextTypes.DEFAULT_TYPE)
     else:
         await query.edit_message_text(f"Failed to delete Post {post_id}.")
 
-# Add Download Link feature
+# Add Download Link Feature
 async def handle_add_download_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -112,10 +114,11 @@ async def handle_add_download_link(update: Update, context: ContextTypes.DEFAULT
 
 async def handle_download_link_name_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data.get("awaiting_link_name"):
-        context.user_data["link_name"] = update.message.text
+        link_name = update.message.text
+        context.user_data["link_name"] = link_name
         context.user_data["awaiting_link_name"] = False
         context.user_data["awaiting_download_url"] = True
-        await update.message.reply_text("Now send the download URL:")
+        await update.message.reply_text(f"Link name received: {link_name}. Now send the download URL:")
 
 async def handle_download_link_url_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data.get("awaiting_download_url"):
@@ -157,7 +160,7 @@ async def handle_download_link_url_input(update: Update, context: ContextTypes.D
             await update.message.reply_text("Failed to fetch post content.")
         context.user_data.clear()
 
-# Add Video Player feature
+# Add Video Player Feature
 async def handle_add_video_player(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -229,4 +232,4 @@ def main():
     application.run_polling()
 
 if __name__ == "__main__":
-    main()
+    main()    
