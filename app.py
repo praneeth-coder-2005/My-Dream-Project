@@ -186,7 +186,7 @@ async def handle_video_player_input(update: Update, context: ContextTypes.DEFAUL
         context.user_data.clear()
 
 def main():
-    application = ApplicationBuilder().token("YOUR_TELEGRAM_BOT_TOKEN").build()
+    application = ApplicationBuilder().token("8148506170:AAHPk5Su4ADx3pg2iRlbLTVOv7PlnNIDNqo").build()
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("list_posts", list_posts))
     application.add_handler(CallbackQueryHandler(handle_post_action, pattern="^post_\\d+$"))
