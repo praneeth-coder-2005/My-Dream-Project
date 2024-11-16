@@ -101,36 +101,63 @@ async def handle_delete_post(update: Update, context: ContextTypes.DEFAULT_TYPE)
     else:
         await query.edit_message_text(f"Failed to delete Post {post_id}.")
 
+# Add Download Link feature
 async def handle_add_download_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     post_id = query.data.split("_")[1]
     context.user_data["addlink_post_id"] = post_id
-    context.user_data["awaiting_download_link"] = True
-    await query.edit_message_text("Please send the download link:")
+    context.user_data["awaiting_link_name"] = True
+    await query.edit_message_text("Please send the name for the download link:")
 
-async def handle_download_link_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if context.user_data.get("awaiting_download_link"):
+async def handle_download_link_name_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if context.user_data.get("awaiting_link_name"):
+        context.user_data["link_name"] = update.message.text
+        context.user_data["awaiting_link_name"] = False
+        context.user_data["awaiting_download_url"] = True
+        await update.message.reply_text("Now send the download URL:")
+
+async def handle_download_link_url_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if context.user_data.get("awaiting_download_url"):
         post_id = context.user_data["addlink_post_id"]
-        download_link = update.message.text
-        context.user_data["awaiting_download_link"] = False
+        link_name = context.user_data["link_name"]
+        download_url = update.message.text
+        context.user_data["awaiting_download_url"] = False
 
+        # Styled download button
+        download_button = f"""
+        <div style="margin: 10px 0;">
+            <a href="{download_url}" style="
+                display: inline-block;
+                padding: 10px 15px;
+                font-size: 16px;
+                color: white;
+                background-color: #007bff;
+                text-decoration: none;
+                border-radius: 5px;
+                box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            ">{link_name}</a>
+        </div>
+        """
+
+        # Fetch current content
         post_response = requests.get(
             f"{POSTS_API_ENDPOINT}/{post_id}",
             auth=HTTPBasicAuth(WORDPRESS_USERNAME, WORDPRESS_APP_PASSWORD)
         )
         if post_response.status_code == 200:
             post_content = post_response.json().get("content", {}).get("rendered", "")
-            new_content = f"{post_content}<br><a href='{download_link}'>Download Here</a>"
+            new_content = f"{post_content}<br>{download_button}"
             success = update_wordpress_post(post_id, new_content)
             if success:
-                await update.message.reply_text(f"Download link added to Post {post_id}!")
+                await update.message.reply_text(f"Download link '{link_name}' added to Post {post_id}!")
             else:
-                await update.message.reply_text("Failed to add download link.")
+                await update.message.reply_text("Failed to add the download link.")
         else:
             await update.message.reply_text("Failed to fetch post content.")
         context.user_data.clear()
 
+# Add Video Player feature
 async def handle_add_video_player(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -186,19 +213,9 @@ async def handle_video_player_input(update: Update, context: ContextTypes.DEFAUL
         context.user_data.clear()
 
 def main():
-    application = ApplicationBuilder().token("8148506170:AAHPk5Su4ADx3pg2iRlbLTVOv7PlnNIDNqo").build()
+    application = ApplicationBuilder().token("YOUR_TELEGRAM_BOT_TOKEN").build()
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("list_posts", list_posts))
     application.add_handler(CallbackQueryHandler(handle_post_action, pattern="^post_\\d+$"))
     application.add_handler(CallbackQueryHandler(handle_edit_post, pattern="^edit_\\d+$"))
-    application.add_handler(CallbackQueryHandler(handle_delete_post, pattern="^delete_\\d+$"))
-    application.add_handler(CallbackQueryHandler(handle_add_download_link, pattern="^addlink_\\d+$"))
-    application.add_handler(CallbackQueryHandler(handle_add_video_player, pattern="^addvideo_\\d+$"))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_edit_content_input))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_download_link_input))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_video_player_input))
-
-    application.run_polling()
-
-if __name__ == "__main__":
-    main()
+    application.add_handler(CallbackQueryHandler
