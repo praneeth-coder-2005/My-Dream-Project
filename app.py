@@ -199,6 +199,7 @@ async def handle_video_player_input(update: Update, context: ContextTypes.DEFAUL
         </script>
         """
 
+        # Fetch current content
         post_response = requests.get(
             f"{POSTS_API_ENDPOINT}/{post_id}",
             auth=HTTPBasicAuth(WORDPRESS_USERNAME, WORDPRESS_APP_PASSWORD)
@@ -232,4 +233,4 @@ def main():
     application.run_polling()
 
 if __name__ == "__main__":
-    main()    
+    main()
