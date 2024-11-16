@@ -216,6 +216,7 @@ def main():
     application = ApplicationBuilder().token("8148506170:AAHPk5Su4ADx3pg2iRlbLTVOv7PlnNIDNqo").build()
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("list_posts", list_posts))
+    application.add_handler(CallbackQueryHandler(handle_post_action, pattern="^post_\\d+$"))
     application.add_handler(CallbackQueryHandler(handle_edit_post, pattern="^edit_\\d+$"))
     application.add_handler(CallbackQueryHandler(handle_delete_post, pattern="^delete_\\d+$"))
     application.add_handler(CallbackQueryHandler(handle_add_download_link, pattern="^addlink_\\d+$"))
